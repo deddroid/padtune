@@ -235,6 +235,19 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
 #[cfg(not(any(target_os = "linux", windows)))]
 pub fn spawn_tray(_tx: Sender<Cmd>, _labels: Labels) {}
 
+// ---- opening folders and links ----------------------------------------------
+
+/// Opens a folder in the file manager or a URL in the browser.
+pub fn open_external(target: &str) {
+    #[cfg(windows)]
+    let cmd = std::process::Command::new("explorer").arg(target).spawn();
+    #[cfg(target_os = "macos")]
+    let cmd = std::process::Command::new("open").arg(target).spawn();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let cmd = std::process::Command::new("xdg-open").arg(target).spawn();
+    let _ = cmd;
+}
+
 // ---- autostart ---------------------------------------------------------------
 
 /// Enables or disables starting the GUI (hidden, in the tray) at login.
