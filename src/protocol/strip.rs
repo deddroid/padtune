@@ -119,6 +119,15 @@ fn frame(s: &Strip, right: bool) -> Result<[u8; REPORT_LEN]> {
             "a strip side needs 1..={MAX_COLORS} colours"
         )));
     }
+    // Breathing and flicker only keep animating with two or more colours:
+    // a single colour is sent twice (verified: it then pulses in one colour).
+    let doubled;
+    let colors = if colors.len() == 1 && matches!(s.effect, Effect::Breathing | Effect::Flicker) {
+        doubled = [colors[0], colors[0]];
+        &doubled[..]
+    } else {
+        colors
+    };
     let mut payload = vec![
         0,
         0,
@@ -181,6 +190,19 @@ mod tests {
         assert!(s.frames().is_err());
         s.left = vec![[0; 3]; 7];
         assert_eq!(s.frames().unwrap()[0][1], 34);
+    }
+
+    #[test]
+    fn single_colour_animations_are_doubled() {
+        let s = Strip {
+            effect: Effect::Breathing,
+            ..Strip::solid([1, 2, 3], 255)
+        };
+        let [l, _] = s.frames().unwrap();
+        assert_eq!(l[1], 19);
+        assert_eq!(l[12..18], [1, 2, 3, 1, 2, 3]);
+        // Static keeps one colour.
+        assert_eq!(Strip::solid([1, 2, 3], 255).frames().unwrap()[0][1], 16);
     }
 
     #[test]

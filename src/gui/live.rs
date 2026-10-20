@@ -56,14 +56,16 @@ pub type Shared = Arc<Mutex<LiveState>>;
 /// Handle to the input thread.
 pub struct Live {
     pub state: Shared,
-    rumble: std::sync::mpsc::Sender<u16>,
+    rumble: std::sync::mpsc::Sender<(u16, u16)>,
 }
 
 impl Live {
-    /// Plays a short rumble (both motors) at `magnitude` (0..=65535) so the
-    /// vibration settings can be felt. Uses the OS force-feedback API.
-    pub fn rumble(&self, magnitude: u16) {
-        let _ = self.rumble.send(magnitude);
+    /// Plays a short rumble so the vibration settings can be felt, through
+    /// the OS force-feedback API: `strong` drives the left grip motor, `weak`
+    /// the right one (0..=65535 each; the controller then scales it with its
+    /// own min/max). Trigger motors are not reachable this way.
+    pub fn rumble(&self, strong: u16, weak: u16) {
+        let _ = self.rumble.send((strong, weak));
     }
 }
 
@@ -71,7 +73,7 @@ impl Live {
 pub fn spawn(wake: impl Fn() + Send + 'static) -> Live {
     let state: Shared = Arc::default();
     let out = state.clone();
-    let (rumble_tx, rumble_rx) = std::sync::mpsc::channel::<u16>();
+    let (rumble_tx, rumble_rx) = std::sync::mpsc::channel::<(u16, u16)>();
     std::thread::Builder::new()
         .name("padtune-input".into())
         .spawn(move || {
@@ -80,8 +82,8 @@ pub fn spawn(wake: impl Fn() + Send + 'static) -> Live {
             let mut events = 0u32;
             let mut playing: Option<(gilrs::ff::Effect, Instant)> = None;
             loop {
-                if let Ok(magnitude) = rumble_rx.try_recv() {
-                    playing = play_rumble(&mut gilrs, magnitude).map(|e| (e, Instant::now()));
+                if let Ok((strong, weak)) = rumble_rx.try_recv() {
+                    playing = play_rumble(&mut gilrs, strong, weak).map(|e| (e, Instant::now()));
                 }
                 if playing
                     .as_ref()
@@ -167,7 +169,7 @@ pub fn spawn(wake: impl Fn() + Send + 'static) -> Live {
     }
 }
 
-fn play_rumble(gilrs: &mut Gilrs, magnitude: u16) -> Option<gilrs::ff::Effect> {
+fn play_rumble(gilrs: &mut Gilrs, strong: u16, weak: u16) -> Option<gilrs::ff::Effect> {
     use gilrs::ff::{BaseEffect, BaseEffectType, EffectBuilder, Replay, Ticks};
     let ids: Vec<_> = gilrs
         .gamepads()
@@ -183,12 +185,12 @@ fn play_rumble(gilrs: &mut Gilrs, magnitude: u16) -> Option<gilrs::ff::Effect> {
     };
     let effect = EffectBuilder::new()
         .add_effect(BaseEffect {
-            kind: BaseEffectType::Strong { magnitude },
+            kind: BaseEffectType::Strong { magnitude: strong },
             scheduling,
             ..Default::default()
         })
         .add_effect(BaseEffect {
-            kind: BaseEffectType::Weak { magnitude },
+            kind: BaseEffectType::Weak { magnitude: weak },
             scheduling,
             ..Default::default()
         })

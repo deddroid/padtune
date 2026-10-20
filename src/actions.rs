@@ -200,15 +200,6 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
             "polling rate",
         )?;
     }
-    if let Some(v) = delta.led_brightness {
-        set_and_verify(
-            dev,
-            &commands::set_led_brightness(v),
-            &commands::get_led_brightness(),
-            |p| p.first() == Some(&v),
-            "LED brightness",
-        )?;
-    }
     if let Some(colors) = delta.logo_colors {
         set_and_verify(
             dev,
@@ -221,11 +212,31 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
     for m in delta.macro_records()? {
         write_macro(dev, &m)?;
     }
+    // The strip effect (70) also overwrites the strip brightness (minimum
+    // 50, verified): remember the current one to put it back afterwards.
+    let mut brightness = delta.led_brightness;
     if let Some(strip) = &delta.strip {
+        if brightness.is_none() {
+            brightness = dev
+                .request(&commands::get_led_brightness())?
+                .first()
+                .copied();
+        }
         write_strip(dev, strip)?;
     }
     if let Some(profile) = delta.profile() {
         write_profile(dev, &profile?)?;
+    }
+    // Last: the strip effect (70) also sets the strip brightness (min 50),
+    // so the general brightness (72) must come after it to stick.
+    if let Some(v) = brightness {
+        set_and_verify(
+            dev,
+            &commands::set_led_brightness(v),
+            &commands::get_led_brightness(),
+            |p| p.first() == Some(&v),
+            "LED brightness",
+        )?;
     }
     Ok(())
 }

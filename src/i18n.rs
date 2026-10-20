@@ -147,9 +147,9 @@ strings! {
     LogoIntensity => "Intensity", "Intensità";
     Advanced => "Advanced", "Avanzate";
     Vibration => "Vibration", "Vibrazione";
-    VibHint => "Each motor scales the game's rumble between a minimum and a maximum strength. FN + → on the controller cycles the trigger vibration level.", "Ogni motore scala la vibrazione del gioco tra una potenza minima e una massima. FN + → sul controller cambia il livello di vibrazione dei grilletti.";
-    VibTestStrong => "Test strong", "Prova forte";
-    VibTestWeak => "Test weak", "Prova debole";
+    VibHint => "Each motor scales the game's rumble between a minimum and a maximum strength. Releasing a grip slider writes the vibration to the controller and plays it as a preview. FN + → on the controller cycles the trigger vibration level.", "Ogni motore scala la vibrazione del gioco tra una potenza minima e una massima. Rilasciando un cursore di un'impugnatura la vibrazione viene scritta nel controller e riprodotta come anteprima. FN + → sul controller cambia il livello di vibrazione dei grilletti.";
+    VibTest => "Test", "Prova";
+    VibNoTest => "can only be felt in games", "si sente solo nei giochi";
     VibOff => "Off", "Spenta";
     VibWeak => "Weak", "Debole";
     VibStandard => "Standard", "Standard";
@@ -176,7 +176,6 @@ strings! {
     StripColors => "Colours", "Colori";
     StripLeft => "Left", "Sinistra";
     StripRight => "Right", "Destra";
-    StripTwoColors => "Breathing and flicker need at least two colours to keep animating.", "Respiro e lampeggio richiedono almeno due colori per animarsi di continuo.";
     LogoOtherModes => "Colours stored for the other console modes (Switch / PlayStation; slot order not verified).", "Colori memorizzati per le altre modalità console (Switch / PlayStation; ordine degli slot non verificato).";
     ModeSlot => "Mode slot", "Slot modalità";
     MacroEmpty => "empty", "vuoto";

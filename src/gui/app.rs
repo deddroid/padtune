@@ -26,18 +26,20 @@ enum Tab {
     Sticks,
     Triggers,
     Lights,
+    Vibration,
     Macros,
     Profiles,
     Settings,
 }
 
 impl Tab {
-    const ALL: [Tab; 8] = [
+    const ALL: [Tab; 9] = [
         Tab::Device,
         Tab::Buttons,
         Tab::Sticks,
         Tab::Triggers,
         Tab::Lights,
+        Tab::Vibration,
         Tab::Macros,
         Tab::Profiles,
         Tab::Settings,
@@ -50,6 +52,7 @@ impl Tab {
             Tab::Sticks => T::TabSticks,
             Tab::Triggers => T::TabTriggers,
             Tab::Lights => T::TabLights,
+            Tab::Vibration => T::Vibration,
             Tab::Macros => T::TabMacros,
             Tab::Profiles => T::TabProfiles,
             Tab::Settings => T::TabSettings,
@@ -63,6 +66,7 @@ impl Tab {
             Tab::Sticks => "◎",
             Tab::Triggers => "◭",
             Tab::Lights => "☀",
+            Tab::Vibration => "≈",
             Tab::Macros => "⟲",
             Tab::Profiles => "☰",
             Tab::Settings => "⚙",
@@ -76,6 +80,7 @@ impl Tab {
             Tab::Sticks => "sticks",
             Tab::Triggers => "triggers",
             Tab::Lights => "lights",
+            Tab::Vibration => "vibration",
             Tab::Macros => "macros",
             Tab::Profiles => "profiles",
             Tab::Settings => "settings",
@@ -189,6 +194,10 @@ pub struct App {
     idle_dongle: bool,
     macro_slot: usize,
     shell: std::sync::Arc<super::Shell>,
+    /// Rumble to play once the vibration preview write is acknowledged.
+    pending_rumble: Option<(u16, u16)>,
+    /// A vibration-only preview write is in flight: keep the other edits.
+    preview_inflight: bool,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -294,6 +303,8 @@ impl App {
             idle_dongle: false,
             macro_slot: 0,
             shell,
+            pending_rumble: None,
+            preview_inflight: false,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -354,6 +365,12 @@ impl App {
         for ev in events {
             match ev {
                 Event::Busy(b) => self.busy = b,
+                Event::Snapshot(s) if self.preview_inflight => {
+                    // Vibration preview: the device now holds the edited
+                    // vibration; keep every other unapplied edit.
+                    self.preview_inflight = false;
+                    self.snap = Some(*s);
+                }
                 Event::Snapshot(s) => {
                     // Keep unapplied edits only if the device did not change underneath.
                     let keep = self.dirty()
@@ -388,6 +405,13 @@ impl App {
                         } else {
                             why
                         });
+                    }
+                }
+                Event::Applied if self.preview_inflight => {
+                    if let (Some((strong, weak)), Some(l)) =
+                        (self.pending_rumble.take(), &self.live)
+                    {
+                        l.rumble(strong, weak);
                     }
                 }
                 Event::Applied => {
@@ -970,25 +994,20 @@ impl App {
                 });
             }
         });
-        ui.add_space(10.0);
-        let rumble = self.live.as_ref();
+    }
+
+    fn page_vibration(&mut self, ui: &mut egui::Ui) {
+        let lang = self.lang();
+        let has_live = self.live.is_some();
+        let mut test: Option<(u16, u16)> = None;
+        let mut preview: Option<(u16, u16)> = None;
+        let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
+            return no_profile(ui, lang);
+        };
         card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(tr(lang, T::Vibration)).strong());
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if let Some(l) = rumble {
-                        if ui.button(tr(lang, T::VibTestStrong)).clicked() {
-                            l.rumble(u16::MAX);
-                        }
-                        if ui.button(tr(lang, T::VibTestWeak)).clicked() {
-                            l.rumble(u16::MAX / 4);
-                        }
-                    }
-                });
-            });
             ui.label(dim(tr(lang, T::VibHint)));
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(tr(lang, T::Presets)).color(TEXT_DIM));
                 for (label, v) in [
                     (T::VibOff, Vibration::OFF),
@@ -1004,38 +1023,113 @@ impl App {
                     }
                 }
             });
-            ui.add_space(4.0);
-            ui.spacing_mut().slider_width = (ui.available_width() / 2.0 - 160.0).max(80.0);
-            egui::Grid::new("vib")
-                .num_columns(3)
-                .spacing([16.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label("");
-                    ui.label(dim(tr(lang, T::VibMin)));
-                    ui.label(dim(tr(lang, T::VibMax)));
-                    ui.end_row();
-                    for (m, name) in [T::VibGripL, T::VibGripR, T::VibMotor3, T::VibMotor4]
-                        .into_iter()
-                        .enumerate()
-                    {
-                        let mut v = profile.vibration(m);
-                        let before = v;
-                        ui.label(RichText::new(tr(lang, name)).color(TEXT_DIM));
-                        ui.add(egui::Slider::new(&mut v.min, 0..=255));
-                        ui.add(egui::Slider::new(&mut v.max, 0..=255));
-                        ui.end_row();
-                        if v != before {
-                            // Keep the range valid while dragging either end.
-                            if v.min != before.min {
-                                v.max = v.max.max(v.min);
-                            } else {
-                                v.min = v.min.min(v.max);
-                            }
-                            let _ = profile.set_vibration(m, v);
-                        }
-                    }
-                });
         });
+        ui.add_space(10.0);
+        // Motor → rumble that reaches it (strong = left grip, weak = right).
+        let motors = [
+            (T::VibGripL, Some((u16::MAX, 0u16))),
+            (T::VibGripR, Some((0u16, u16::MAX))),
+            (T::VibMotor3, None),
+            (T::VibMotor4, None),
+        ];
+        for (m, (name, rumble)) in motors.into_iter().enumerate() {
+            card(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tr(lang, name)).strong());
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| match rumble {
+                        Some(r) if has_live => {
+                            if ui.button(format!("▶ {}", tr(lang, T::VibTest))).clicked() {
+                                test = Some(r);
+                            }
+                        }
+                        _ => {
+                            ui.label(dim(tr(lang, T::VibNoTest)));
+                        }
+                    });
+                });
+                let mut v = profile.vibration(m);
+                let before = v;
+                ui.spacing_mut().slider_width = (ui.available_width() - 200.0).max(80.0);
+                let rmin = ui
+                    .horizontal(|ui| {
+                        ui.add_sized(
+                            [90.0, 20.0],
+                            egui::Label::new(RichText::new(tr(lang, T::VibMin)).color(TEXT_DIM)),
+                        );
+                        ui.add(egui::Slider::new(&mut v.min, 0..=255))
+                    })
+                    .inner;
+                let rmax = ui
+                    .horizontal(|ui| {
+                        ui.add_sized(
+                            [90.0, 20.0],
+                            egui::Label::new(RichText::new(tr(lang, T::VibMax)).color(TEXT_DIM)),
+                        );
+                        ui.add(egui::Slider::new(&mut v.max, 0..=255))
+                    })
+                    .inner;
+                if v != before {
+                    if v.min != before.min {
+                        v.max = v.max.max(v.min);
+                    } else {
+                        v.min = v.min.min(v.max);
+                    }
+                    let _ = profile.set_vibration(m, v);
+                }
+                // Preview on release: write the vibration, then rumble at the
+                // weakest (min) or strongest (max) game level.
+                if let Some((s, w)) = rumble {
+                    let level = |full: u16, top: bool| {
+                        if full == 0 {
+                            0
+                        } else if top {
+                            u16::MAX
+                        } else {
+                            300
+                        }
+                    };
+                    if rmax.drag_stopped() {
+                        preview = Some((level(s, true), level(w, true)));
+                    } else if rmin.drag_stopped() {
+                        preview = Some((level(s, false), level(w, false)));
+                    }
+                }
+            });
+            ui.add_space(8.0);
+        }
+        if let (Some((s, w)), Some(l)) = (test, &self.live) {
+            l.rumble(s, w);
+        }
+        if let Some(r) = preview {
+            self.preview_vibration(r);
+        }
+    }
+
+    /// Writes only the edited vibration to the controller, then rumbles.
+    fn preview_vibration(&mut self, rumble: (u16, u16)) {
+        let (Some(snap), Some(edit)) = (&self.snap, &self.edit) else {
+            return;
+        };
+        let (Some(current), Some(edited)) = (&snap.profile, &edit.profile) else {
+            return;
+        };
+        let mut p = current.clone();
+        for m in 0..VIBRATION_MOTORS {
+            let _ = p.set_vibration(m, edited.vibration(m));
+        }
+        if p == *current {
+            if let Some(l) = &self.live {
+                l.rumble(rumble.0, rumble.1);
+            }
+            return;
+        }
+        let delta = DeviceConfig {
+            profile: Some(config::to_hex(&p.to_bytes())),
+            ..Default::default()
+        };
+        self.pending_rumble = Some(rumble);
+        self.preview_inflight = true;
+        self.send(Request::Apply(delta));
     }
 
     fn page_lights(&mut self, ui: &mut egui::Ui) {
@@ -1200,13 +1294,6 @@ impl App {
                             list.push(last);
                         }
                     });
-                }
-                if matches!(st.effect, Effect::Breathing | Effect::Flicker) && st.left.len() < 2 {
-                    ui.label(
-                        RichText::new(tr(lang, T::StripTwoColors))
-                            .small()
-                            .color(WARN),
-                    );
                 }
             });
         });
@@ -1548,9 +1635,14 @@ impl App {
             return;
         }
         let Some(e) = &mut self.edit else { return };
-        let color = logo_color(e.logo_colors).unwrap_or(MODE_LIGHT_XINPUT);
-        let bright = e.strip.as_ref().map_or(255, |s| s.bright);
-        let want = Strip::solid([color.r(), color.g(), color.b()], bright);
+        // Only the hue is shared: the logo's intensity is scaled up to full,
+        // the strip keeps its own brightness.
+        let c = logo_color(e.logo_colors).unwrap_or(MODE_LIGHT_XINPUT);
+        let rgb = [c.r(), c.g(), c.b()];
+        let peak = rgb.iter().copied().max().unwrap_or(0).max(1);
+        let full = rgb.map(|v| (u32::from(v) * 255 / u32::from(peak)) as u8);
+        let bright = e.led_brightness.unwrap_or(255).max(strip::MIN_BRIGHT);
+        let want = Strip::solid(full, bright);
         if e.strip.as_ref() != Some(&want) {
             e.strip = Some(want);
         }
@@ -1653,6 +1745,7 @@ impl eframe::App for App {
                     Tab::Sticks => self.page_sticks(ui),
                     Tab::Triggers => self.page_triggers(ui),
                     Tab::Lights => self.page_lights(ui),
+                    Tab::Vibration => self.page_vibration(ui),
                     Tab::Macros => self.page_macros(ui),
                     Tab::Profiles => self.page_profiles(ui),
                     Tab::Settings => self.page_settings(ui),
