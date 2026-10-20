@@ -54,6 +54,8 @@ fn write_toml<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 #[serde(default)]
 pub struct Settings {
     pub language: Lang,
+    /// Keep the light strip on the HOME logo colour.
+    pub strip_follows_logo: bool,
     pub autostart: bool,
     pub close_to_tray: bool,
     pub start_hidden: bool,
@@ -63,6 +65,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: Lang::from_env(),
+            strip_follows_logo: false,
             autostart: false,
             close_to_tray: true,
             start_hidden: false,
@@ -109,6 +112,9 @@ pub struct DeviceConfig {
     pub logo_colors: Option<[[u8; 3]; 3]>,
     /// Macro records by slot (hex encoded, sealed).
     pub macros: BTreeMap<u8, String>,
+    /// Custom light-strip effect (write-only on the controller: the last
+    /// value applied is remembered in the state file).
+    pub strip: Option<crate::protocol::strip::Strip>,
 }
 
 impl DeviceConfig {
@@ -123,6 +129,7 @@ impl DeviceConfig {
             macros: (0..SLOTS as u8)
                 .map(|s| (s, to_hex(&Macro::empty(s).encode().expect("empty macro"))))
                 .collect(),
+            strip: Some(crate::protocol::strip::Strip::default()),
         }
     }
 
@@ -159,6 +166,29 @@ impl DeviceConfig {
                 .filter(|(slot, rec)| current.macros.get(slot) != Some(rec))
                 .map(|(s, r)| (*s, r.clone()))
                 .collect(),
+            strip: pick(&self.strip, &current.strip),
+        }
+    }
+
+    /// Overwrites the fields present in `delta`.
+    pub fn merge(&mut self, delta: &DeviceConfig) {
+        if delta.profile.is_some() {
+            self.profile = delta.profile.clone();
+        }
+        if delta.polling_code.is_some() {
+            self.polling_code = delta.polling_code;
+        }
+        if delta.led_brightness.is_some() {
+            self.led_brightness = delta.led_brightness;
+        }
+        if delta.logo_colors.is_some() {
+            self.logo_colors = delta.logo_colors;
+        }
+        if delta.strip.is_some() {
+            self.strip = delta.strip.clone();
+        }
+        for (slot, rec) in &delta.macros {
+            self.macros.insert(*slot, rec.clone());
         }
     }
 
@@ -263,6 +293,7 @@ mod tests {
             led_brightness: Some(255),
             logo_colors: None,
             macros: BTreeMap::from([(0, "aa".into()), (1, "bb".into())]),
+            strip: None,
         };
         let wanted = DeviceConfig {
             profile: Some("aa".into()),
@@ -270,6 +301,7 @@ mod tests {
             led_brightness: Some(255),
             logo_colors: Some([[1, 2, 3]; 3]),
             macros: BTreeMap::from([(0, "aa".into()), (1, "cc".into())]),
+            strip: Some(crate::protocol::strip::Strip::default()),
         };
         let delta = wanted.changes_from(&current);
         assert_eq!(delta.profile, None);
@@ -277,6 +309,7 @@ mod tests {
         assert_eq!(delta.led_brightness, None);
         assert!(delta.logo_colors.is_some());
         assert_eq!(delta.macros, BTreeMap::from([(1, "cc".to_string())]));
+        assert!(delta.strip.is_some());
         assert!(current.changes_from(&current).is_empty());
     }
 
@@ -284,6 +317,7 @@ mod tests {
     fn settings_toml_roundtrip() {
         let s = Settings {
             language: Lang::It,
+            strip_follows_logo: true,
             autostart: true,
             close_to_tray: false,
             start_hidden: true,

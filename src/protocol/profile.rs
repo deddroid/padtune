@@ -107,20 +107,41 @@ pub enum KeyMap {
     Default,
     /// Disabled.
     Disabled,
-    /// Acts as another controller button (target slot index).
-    Button { target: u8 },
+    /// Acts as up to three controller buttons pressed together (key slots;
+    /// [`NO_KEY`] = unused). Encoding `01 t1 t2 t3`, as written by the
+    /// controller itself and the official tools (BBWA captures show
+    /// `01 0d ff ff`); unused places must be `ff`, since `00` means "A".
+    Button { targets: [u8; 3] },
     /// Sends a keyboard combination (HID usages) on the keyboard interface.
     Keyboard { modifiers: u8, key1: u8, key2: u8 },
     /// Unknown encoding, preserved verbatim.
     Raw { bytes: [u8; 4] },
 }
 
+/// Unused target place in a [`KeyMap::Button`].
+pub const NO_KEY: u8 = 0xff;
+
 impl KeyMap {
+    /// One target button.
+    pub fn button(target: u8) -> Self {
+        KeyMap::Button {
+            targets: [target, NO_KEY, NO_KEY],
+        }
+    }
+
     pub fn decode(b: [u8; 4]) -> Self {
         match b {
             [0, 0, 0, 0] => KeyMap::Default,
-            [1, 0xff, ..] => KeyMap::Disabled,
-            [1, t, 0, 0] if usize::from(t) < KEY_SLOTS => KeyMap::Button { target: t },
+            [1, NO_KEY, ..] => KeyMap::Disabled,
+            [1, t1, t2, t3]
+                if [t1, t2, t3]
+                    .iter()
+                    .all(|t| *t == NO_KEY || usize::from(*t) < KEY_SLOTS) =>
+            {
+                KeyMap::Button {
+                    targets: [t1, t2, t3],
+                }
+            }
             [2, m, k1, k2] if k1 != 0 => KeyMap::Keyboard {
                 modifiers: m,
                 key1: k1,
@@ -133,8 +154,10 @@ impl KeyMap {
     pub fn encode(self) -> [u8; 4] {
         match self {
             KeyMap::Default => [0; 4],
-            KeyMap::Disabled => [1, 0xff, 0, 0],
-            KeyMap::Button { target } => [1, target, 0, 0],
+            KeyMap::Disabled => [1, NO_KEY, NO_KEY, NO_KEY],
+            KeyMap::Button {
+                targets: [t1, t2, t3],
+            } => [1, t1, t2, t3],
             KeyMap::Keyboard {
                 modifiers,
                 key1,
@@ -143,6 +166,26 @@ impl KeyMap {
             KeyMap::Raw { bytes } => bytes,
         }
     }
+}
+
+/// Number of vibration motors in the profile.
+pub const VIBRATION_MOTORS: usize = 4;
+
+/// Output range of one vibration motor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Vibration {
+    pub min: u8,
+    pub max: u8,
+}
+
+impl Vibration {
+    /// Factory value on the Rainbow 2 Pro.
+    pub const FACTORY: Vibration = Vibration {
+        min: 0x50,
+        max: 0xff,
+    };
+    /// Motor disabled (as the official app writes "off").
+    pub const OFF: Vibration = Vibration { min: 0, max: 1 };
 }
 
 /// Rapid-fire speed setting.
@@ -332,10 +375,37 @@ impl Profile {
 
     // ---- vibration -------------------------------------------------------
 
-    /// Raw vibration bytes (layout partly unknown; preserved).
+    /// Raw vibration bytes (four minimums, then four maximums).
     pub fn vibration_raw(&self) -> [u8; 8] {
         let o = self.layout.vibration;
         self.raw[o..o + 8].try_into().expect("8 bytes")
+    }
+
+    /// Output range of a vibration motor: the game's rumble strength is
+    /// scaled between `min` and `max` (0..=255). Motors: 0 = left grip,
+    /// 1 = right grip, 2/3 = triggers (order of 2/3 to be confirmed).
+    /// BlitzForge (v37) documents motors 0 and 1 with the same layout.
+    pub fn vibration(&self, motor: usize) -> Vibration {
+        let o = self.layout.vibration;
+        Vibration {
+            min: self.raw[o + motor],
+            max: self.raw[o + 4 + motor],
+        }
+    }
+
+    pub fn set_vibration(&mut self, motor: usize, v: Vibration) -> Result<()> {
+        if motor >= VIBRATION_MOTORS {
+            return Err(Error::Invalid(format!(
+                "vibration motor {motor} out of range"
+            )));
+        }
+        if v.max < v.min {
+            return Err(Error::Invalid("vibration max must not be below min".into()));
+        }
+        let o = self.layout.vibration;
+        self.raw[o + motor] = v.min;
+        self.raw[o + 4 + motor] = v.max;
+        Ok(())
     }
 
     // ---- key mapping -----------------------------------------------------
@@ -487,18 +557,19 @@ mod tests {
             },
         )
         .unwrap();
-        p.set_key(0, KeyMap::Button { target: 1 }).unwrap();
+        p.set_key(0, KeyMap::button(1)).unwrap();
         p.set_turbo_mask(1 << 3);
         let bytes = p.to_bytes();
         assert_eq!(bytes[4..7], [0x01, 2, 2]);
-        assert_eq!(bytes[0x98..0x9c], [1, 1, 0, 0]);
+        assert_eq!(bytes[0x98..0x9c], [1, 1, 0xff, 0xff]);
         assert_eq!(bytes[0x74..0x78], [0, 0, 0, 8]);
         let reparsed = Profile::from_bytes(&bytes).unwrap();
         assert_eq!(
             reparsed
                 .diff(&Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap())
                 .len(),
-            6
+            // trigger: 3 bytes, key map: 4 bytes, turbo: 1 byte
+            8
         );
         let frames = p.write_frames();
         assert_eq!(frames.len(), 5);
@@ -506,16 +577,37 @@ mod tests {
     }
 
     #[test]
+    fn vibration_fields() {
+        let mut p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
+        for m in 0..VIBRATION_MOTORS {
+            assert_eq!(p.vibration(m), Vibration::FACTORY);
+        }
+        p.set_vibration(1, Vibration { min: 10, max: 120 }).unwrap();
+        assert_eq!(p.to_bytes()[0x7d], 10);
+        assert_eq!(p.to_bytes()[0x81], 120);
+        assert!(p.set_vibration(4, Vibration::OFF).is_err());
+        assert!(p.set_vibration(0, Vibration { min: 9, max: 8 }).is_err());
+    }
+
+    #[test]
     fn keymap_roundtrip() {
         for b in [
             [0, 0, 0, 0],
-            [1, 0xff, 0, 0],
-            [1, 3, 0, 0],
+            [1, 0xff, 0xff, 0xff],
+            [1, 3, 0xff, 0xff],
+            [1, 3, 4, 0xff],
             [2, 0x02, 0x04, 0],
             [9, 9, 9, 9],
         ] {
             assert_eq!(KeyMap::decode(b).encode(), b);
         }
+        // A single target leaves the other places empty (ff), never 00 (= A).
+        assert_eq!(KeyMap::button(3).encode(), [1, 3, 0xff, 0xff]);
+        // "01 06 00 00" written by early builds decodes honestly as LB + A + A.
+        assert_eq!(
+            KeyMap::decode([1, 6, 0, 0]),
+            KeyMap::Button { targets: [6, 0, 0] }
+        );
     }
 
     #[test]

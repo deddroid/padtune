@@ -80,6 +80,8 @@ pub struct Snapshot {
     pub logo_colors: Option<[[u8; 3]; 3]>,
     pub power: Option<commands::Power>,
     pub macros: Vec<crate::protocol::macros::Macro>,
+    /// Last strip effect applied by PadTune (the controller cannot report it).
+    pub strip: Option<crate::protocol::strip::Strip>,
     /// Raw `GetWirelessFlag` (FA) reply byte.
     pub wireless_flag: Option<u8>,
     pub connection: Option<Link>,
@@ -116,6 +118,7 @@ impl Snapshot {
                 .iter()
                 .filter_map(|m| m.encode().ok().map(|r| (m.slot, to_hex(&r))))
                 .collect(),
+            strip: self.strip.clone(),
         }
     }
 }
@@ -141,7 +144,14 @@ pub fn read_snapshot(dev: &Device) -> Result<Snapshot> {
         .ok()
         .and_then(|p| p.first().copied());
     let connection = wireless_flag.and_then(link_from_flag);
+    let strip = info.uuid.as_ref().and_then(|u| {
+        crate::config::State::load()
+            .devices
+            .get(u)
+            .and_then(|c| c.strip.clone())
+    });
     Ok(Snapshot {
+        strip,
         info,
         profile,
         led_brightness,
@@ -190,15 +200,6 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
             "polling rate",
         )?;
     }
-    if let Some(v) = delta.led_brightness {
-        set_and_verify(
-            dev,
-            &commands::set_led_brightness(v),
-            &commands::get_led_brightness(),
-            |p| p.first() == Some(&v),
-            "LED brightness",
-        )?;
-    }
     if let Some(colors) = delta.logo_colors {
         set_and_verify(
             dev,
@@ -211,8 +212,31 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
     for m in delta.macro_records()? {
         write_macro(dev, &m)?;
     }
+    // The strip effect (70) also overwrites the strip brightness (minimum
+    // 50, verified): remember the current one to put it back afterwards.
+    let mut brightness = delta.led_brightness;
+    if let Some(strip) = &delta.strip {
+        if brightness.is_none() {
+            brightness = dev
+                .request(&commands::get_led_brightness())?
+                .first()
+                .copied();
+        }
+        write_strip(dev, strip)?;
+    }
     if let Some(profile) = delta.profile() {
         write_profile(dev, &profile?)?;
+    }
+    // Last: the strip effect (70) also sets the strip brightness (min 50),
+    // so the general brightness (72) must come after it to stick.
+    if let Some(v) = brightness {
+        set_and_verify(
+            dev,
+            &commands::set_led_brightness(v),
+            &commands::get_led_brightness(),
+            |p| p.first() == Some(&v),
+            "LED brightness",
+        )?;
     }
     Ok(())
 }
@@ -262,6 +286,19 @@ pub fn write_macro(dev: &Device, m: &crate::protocol::macros::Macro) -> Result<(
         return Err(Error::Protocol(
             "macro read-back differs from what was written".into(),
         ));
+    }
+    Ok(())
+}
+
+/// Sends the custom light-strip effect (left and right) and checks both ACKs.
+pub fn write_strip(dev: &Device, strip: &crate::protocol::strip::Strip) -> Result<()> {
+    for frame in strip.frames()? {
+        let ack = dev.request(&frame)?;
+        if ack.first() != Some(&0) {
+            return Err(Error::Protocol(format!(
+                "light strip write refused ({ack:02x?})"
+            )));
+        }
     }
     Ok(())
 }

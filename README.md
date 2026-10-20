@@ -18,7 +18,7 @@ works on any PC or console afterwards.
 | **Buttons** | Remap any button to another button or to a keyboard key (with modifiers), disable it, per-button **turbo** and turbo speed. Click the button on a drawing of your controller. |
 | **Sticks** | Response curve editor (dead zone, anti-dead zone, two curve points, outer limit, max output), presets, three curve sets, live stick position. |
 | **Triggers** | Dead zone start, full-press point, hair trigger, live trigger travel. |
-| **Lights** | Light-strip brightness, HOME logo colour with intensity, back to factory defaults with one click. |
+| **Lights** | Light-strip effect (static, breathing, gradient, flicker; speed, brightness, up to 7 colours per side, or synced with the logo), strip brightness, HOME logo colour with intensity, factory defaults with one click. |
 | **Macros** | Edit the four on-board macros step by step (buttons held, duration), bind them to M1/M2. |
 | **Polling rate** | Read and set 250 / 500 / 1000 / 2000 Hz. |
 | **Device** | Model, firmware, serial, battery, USB cable vs 2.4G dongle, key test (every button including M1/M2, FN and the front keys), backup/restore, factory settings. |
@@ -90,6 +90,7 @@ padtune macros                    # macro slots with their steps
 padtune set polling 1000
 padtune set brightness 128        # light strip, 0-255
 padtune set logo ff0000           # HOME logo colour (000000 = factory)
+padtune set strip --effect breathing --colors 0000ff,ff0000 --speed 128
 padtune set trigger left --start 5 --end 90 --hair false
 padtune monitor 30                # key test: prints every button press
 ```
@@ -116,8 +117,9 @@ configuration applied per controller) and `profiles/*.toml`.
   that way) and only works over the USB cable.
 * The **active on-board configuration** (the four white LEDs) cannot be read
   from the controller.
-* The **custom colour of the light strip** (FN double-click) cannot be set yet;
-  brightness and the HOME logo colour can.
+* The **light-strip effect** is shown when the strip is in "custom light"
+  mode (double-click FN on the controller). It cannot be read back from the
+  controller, so PadTune shows the last effect it applied.
 * Vibration and motion-control settings are kept untouched but not editable yet.
 * Windows builds are produced by CI and have not been tested on a real
   Windows machine by the author.

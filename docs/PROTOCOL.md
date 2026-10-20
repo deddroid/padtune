@@ -69,7 +69,8 @@ bytes `[0..2]`; bytes `[2..4]` hold the blob length, big-endian (HW).
 | `0E` | Save2Device | `a5 05 0e 00 b8` | — | RE (not needed for D7) |
 | `1A` | Reset (factory) | `a5 05 1a 00 c4` | — | RE — **never sent** |
 | `1B` | Calibration | `a5 06 1b PP QQ sum` | — | RE — **never sent** |
-| `70` | SetLEDShow | `a5 04 70 19` | — | RE |
+| `70` | SetLED (light strip) | `a5 len 70 00 00 00 ZZ MM 00 SS BB ff` + RGB×1..7 + sum | ACK `a5 05 70 00 1a` | HW, see [Light strip](#light-strip) |
+| `70` | SetLEDShow | `a5 04 70 19` | — | RE, never sent |
 | `73` | Get/SetLightingMode | `a5 04 73 1c` | no reply on Rainbow 2 Pro | HW |
 | `DD`, `DC`, `DA`, `DB` | charge LED, competitive mode, motion rate | | no reply on Rainbow 2 Pro | HW |
 
@@ -138,11 +139,27 @@ HW: an empty slot is `crc 00 0a 00 SS 20 00 00 00`; a macro recorded on the
 controller (A, B, ↑) decoded to the expected bits and timings; a macro written
 by `padtune` (X, pause, Y on M1; A, pause, B on M2) played back correctly.
 
-## Not yet decoded
+## Light strip
 
-* Custom colour/effect of the light strip (set on the controller with a
-  double-click on FN; the Android app uses `writeLightConfig`, long frames with
-  opcode `FF` per armorx-toolkit's index).
+The "custom light" effect of the RGB strip (shown after a double-click on FN)
+is set with one short `70` frame per side; it persists without `0E` and cannot
+be read back (HW). Decoded from the official Android app 4.0.9
+(`gamepadset.dart::writeLightConfig`, which routes the Rainbow 2 Pro to the
+two-zone layout) and the PC Tool's `CDeviceBBwon::SetLED`.
+
+```
+A5 len 70 | 00 00 00 zone mode 00 speed bright FF | R G B × 1..7 | sum
+zone   1 = left, 2 = right
+mode   1 static, 2 breathing, 3 gradient, 5 flicker
+speed  (255 - appSpeed) / 10 + 10   (smaller = faster; 0x0A fastest)
+bright 50..255
+```
+
+HW results: static, breathing, gradient and flicker on both sides; 7 colours in
+one 34-byte frame; breathing/flicker with one colour run once and then hold the
+colour. Full notes: [hw-notes/light-strip-re.md](hw-notes/light-strip-re.md).
+
+## Not yet decoded
 * Meaning of `D4`, `E1`, `F8` fields, profile bytes `0C`, `4D`, `7C..84`.
 * Vibration and motion settings semantics on `280_v36`.
 

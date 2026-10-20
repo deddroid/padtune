@@ -61,7 +61,14 @@ fn native_options() -> eframe::NativeOptions {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("PadTune")
         .with_app_id("padtune")
-        .with_inner_size([1060.0, 720.0])
+        .with_inner_size([
+            1060.0,
+            // Taller windows for documentation screenshots.
+            std::env::var("PADTUNE_WINDOW_HEIGHT")
+                .ok()
+                .and_then(|h| h.parse().ok())
+                .unwrap_or(720.0),
+        ])
         .with_min_inner_size([820.0, 560.0]);
     if let Some(icon) = icon() {
         viewport = viewport.with_icon(icon);

@@ -18,7 +18,7 @@ l'interfaccia di configurazione del controller, quindi ogni impostazione resta
 | **Tasti** | Rimappa qualsiasi tasto su un altro tasto o su un tasto della tastiera (con modificatori), disattivalo, **turbo** per tasto e velocità del turbo. Clicca il tasto sul disegno del controller. |
 | **Stick** | Editor della curva (zona morta, anti zona morta, due punti, limite esterno, uscita massima), preset, tre set di curve, posizione dello stick in tempo reale. |
 | **Grilletti** | Inizio della zona morta, punto di pressione piena, hair trigger, corsa in tempo reale. |
-| **Luci** | Luminosità della striscia LED, colore del logo HOME con intensità, ritorno ai valori di fabbrica con un clic. |
+| **Luci** | Effetto della striscia LED (fisso, respiro, gradiente, lampeggio; velocità, luminosità, fino a 7 colori per lato, oppure sincronizzato con il logo), luminosità della striscia, colore del logo HOME con intensità, valori di fabbrica con un clic. |
 | **Macro** | Modifica le quattro macro del controller passo per passo (tasti premuti, durata) e associale a M1/M2. |
 | **Polling** | Lettura e impostazione a 250 / 500 / 1000 / 2000 Hz. |
 | **Dispositivo** | Modello, firmware, seriale, batteria, cavo USB o dongle 2.4G, test tasti (tutti, anche M1/M2, FN e i tasti frontali), backup/ripristino, impostazioni di fabbrica. |
@@ -91,6 +91,7 @@ padtune macros                    # slot macro con i loro passi
 padtune set polling 1000
 padtune set brightness 128        # striscia LED, 0-255
 padtune set logo ff0000           # colore logo HOME (000000 = fabbrica)
+padtune set strip --effect breathing --colors 0000ff,ff0000 --speed 128
 padtune set trigger left --start 5 --end 90 --hair false
 padtune monitor 30                # test tasti: stampa ogni pressione
 ```
@@ -117,8 +118,9 @@ configurazione applicata per controller) e `profiles/*.toml`.
   funzionamento del controller) e funziona solo via cavo USB.
 * La **configurazione integrata attiva** (i quattro LED bianchi) non è
   leggibile dal controller.
-* Il **colore personalizzato della striscia LED** (doppio clic su FN) non è
-  ancora impostabile; luminosità e colore del logo HOME sì.
+* L'**effetto della striscia LED** si vede quando la striscia è in "luce
+  personalizzata" (doppio clic su FN sul controller). Il controller non permette
+  di rileggerlo, quindi PadTune mostra l'ultimo effetto applicato.
 * Le impostazioni di vibrazione e controllo di movimento vengono preservate ma
   non sono ancora modificabili.
 * Le versioni Windows sono prodotte dalla CI e non sono state provate

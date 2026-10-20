@@ -16,6 +16,8 @@ use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
 use crate::protocol::macros::{Macro, Step as MacroStep};
 use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
+use crate::protocol::profile::{NO_KEY, VIBRATION_MOTORS, Vibration};
+use crate::protocol::strip::{self, Effect, Strip};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -24,18 +26,20 @@ enum Tab {
     Sticks,
     Triggers,
     Lights,
+    Vibration,
     Macros,
     Profiles,
     Settings,
 }
 
 impl Tab {
-    const ALL: [Tab; 8] = [
+    const ALL: [Tab; 9] = [
         Tab::Device,
         Tab::Buttons,
         Tab::Sticks,
         Tab::Triggers,
         Tab::Lights,
+        Tab::Vibration,
         Tab::Macros,
         Tab::Profiles,
         Tab::Settings,
@@ -48,6 +52,7 @@ impl Tab {
             Tab::Sticks => T::TabSticks,
             Tab::Triggers => T::TabTriggers,
             Tab::Lights => T::TabLights,
+            Tab::Vibration => T::Vibration,
             Tab::Macros => T::TabMacros,
             Tab::Profiles => T::TabProfiles,
             Tab::Settings => T::TabSettings,
@@ -61,6 +66,7 @@ impl Tab {
             Tab::Sticks => "◎",
             Tab::Triggers => "◭",
             Tab::Lights => "☀",
+            Tab::Vibration => "≈",
             Tab::Macros => "⟲",
             Tab::Profiles => "☰",
             Tab::Settings => "⚙",
@@ -74,6 +80,7 @@ impl Tab {
             Tab::Sticks => "sticks",
             Tab::Triggers => "triggers",
             Tab::Lights => "lights",
+            Tab::Vibration => "vibration",
             Tab::Macros => "macros",
             Tab::Profiles => "profiles",
             Tab::Settings => "settings",
@@ -89,6 +96,7 @@ struct Edit {
     led_brightness: Option<u8>,
     logo_colors: Option<[[u8; 3]; 3]>,
     macros: Vec<Macro>,
+    strip: Option<Strip>,
 }
 
 impl Edit {
@@ -99,6 +107,7 @@ impl Edit {
             led_brightness: s.led_brightness,
             logo_colors: s.logo_colors,
             macros: s.macros.clone(),
+            strip: s.strip.clone(),
         }
     }
 
@@ -113,6 +122,7 @@ impl Edit {
                 .iter()
                 .filter_map(|m| m.encode().ok().map(|r| (m.slot, config::to_hex(&r))))
                 .collect(),
+            strip: self.strip.clone(),
         }
     }
 
@@ -128,6 +138,9 @@ impl Edit {
         }
         if c.logo_colors.is_some() {
             self.logo_colors = c.logo_colors;
+        }
+        if c.strip.is_some() {
+            self.strip = c.strip.clone();
         }
         if let Ok(records) = c.macro_records() {
             for m in records {
@@ -169,7 +182,7 @@ pub struct App {
     profiles: Vec<NamedProfile>,
     new_profile_name: String,
     shots: Option<ScreenshotRun>,
-    live: Option<live::Shared>,
+    live: Option<live::Live>,
     live_now: LiveState,
     selected_slot: usize,
     /// Buttons from the controller's own key report (covers every button).
@@ -181,6 +194,10 @@ pub struct App {
     idle_dongle: bool,
     macro_slot: usize,
     shell: std::sync::Arc<super::Shell>,
+    /// Rumble to play once the vibration preview write is acknowledged.
+    pending_rumble: Option<(u16, u16)>,
+    /// A vibration-only preview write is in flight: keep the other edits.
+    preview_inflight: bool,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -234,6 +251,7 @@ fn demo_snapshot() -> Snapshot {
             ];
             m
         },
+        strip: Some(Strip::default()),
         wireless_flag: Some(1),
         connection: Some(crate::actions::Link::Usb),
     }
@@ -285,6 +303,8 @@ impl App {
             idle_dongle: false,
             macro_slot: 0,
             shell,
+            pending_rumble: None,
+            preview_inflight: false,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -345,6 +365,12 @@ impl App {
         for ev in events {
             match ev {
                 Event::Busy(b) => self.busy = b,
+                Event::Snapshot(s) if self.preview_inflight => {
+                    // Vibration preview: the device now holds the edited
+                    // vibration; keep every other unapplied edit.
+                    self.preview_inflight = false;
+                    self.snap = Some(*s);
+                }
                 Event::Snapshot(s) => {
                     // Keep unapplied edits only if the device did not change underneath.
                     let keep = self.dirty()
@@ -381,14 +407,14 @@ impl App {
                         });
                     }
                 }
-                Event::Applied => {
-                    if let (Some(e), Some(s)) = (&self.edit, &self.snap) {
-                        let mut state = config::State::load();
-                        if let Some(uuid) = &s.info.uuid {
-                            state.devices.insert(uuid.clone(), e.config());
-                            let _ = state.save();
-                        }
+                Event::Applied if self.preview_inflight => {
+                    if let (Some((strong, weak)), Some(l)) =
+                        (self.pending_rumble.take(), &self.live)
+                    {
+                        l.rumble(strong, weak);
                     }
+                }
+                Event::Applied => {
                     self.info(self.t(T::Done));
                 }
                 Event::Message(m) => self.info(format!("{}: {m}", self.t(T::BackupDone))),
@@ -536,6 +562,7 @@ impl App {
 
     fn page_device(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
+        let marker = self.marker();
         let Some(s) = self.snap.clone() else {
             card(ui, |ui| {
                 ui.label(RichText::new(tr(lang, T::Disconnected)).size(18.0));
@@ -625,7 +652,12 @@ impl App {
             ui.label(dim(tr(lang, T::PollingHint)));
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                for (code, hz) in POLLING_CODES {
+                // USB full-speed devices poll at most every 1 ms: 2000 Hz is
+                // only offered for models that can actually do it.
+                for (code, hz) in POLLING_CODES
+                    .into_iter()
+                    .filter(|(_, hz)| *hz <= max_polling_hz(&marker))
+                {
                     let sel = edit.polling_code == Some(code);
                     if ui.selectable_label(sel, format!("{hz} Hz")).clicked() {
                         edit.polling_code = Some(code);
@@ -688,8 +720,9 @@ impl App {
         let self_link = self.snap.as_ref().and_then(|s| s.connection);
         let mut key_test = self.key_test;
         let mut selected = self.selected_slot;
-        let strip = self.edit.as_ref().and_then(|e| e.led_brightness);
-        let logo = self.edit.as_ref().and_then(|e| logo_color(e.logo_colors));
+        let Some(lights) = self.edit.as_ref().map(|e| light_marks(e, false)) else {
+            return no_profile(ui, lang);
+        };
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
@@ -701,15 +734,23 @@ impl App {
         let marks = Marks {
             turbo: profile.turbo_mask(),
             remapped,
-            strip,
-            light: MODE_LIGHT_XINPUT,
-            logo,
-            profile: None,
-            lights_only: false,
+            ..lights
         };
-        let editor_w = 300.0;
-        let pad_w = (ui.available_width() - editor_w - 40.0).max(320.0);
-        ui.horizontal_top(|ui| {
+        // Side by side when there is room, otherwise the editor goes below
+        // the drawing (never cut off on the right).
+        let wide = ui.available_width() >= 760.0;
+        let editor_w = if wide { 300.0 } else { ui.available_width() };
+        let pad_w = if wide {
+            (ui.available_width() - editor_w - 40.0).max(320.0)
+        } else {
+            ui.available_width()
+        };
+        let layout = if wide {
+            Layout::left_to_right(Align::Min)
+        } else {
+            Layout::top_down(Align::Min)
+        };
+        ui.with_layout(layout, |ui| {
             ui.vertical(|ui| {
                 ui.set_max_width(pad_w);
                 card(ui, |ui| {
@@ -864,10 +905,25 @@ impl App {
             card(&mut cols[0], |ui| {
                 let pos = if right { live.right } else { live.left };
                 let mag = live.connected.then(|| pos.0.hypot(pos.1).min(1.0));
-                curve_plot(ui, &c, mag);
+                curve_plot(
+                    ui,
+                    &c,
+                    mag,
+                    (tr(lang, T::AxisInput), tr(lang, T::AxisOutput)),
+                );
+                ui.label(dim(tr(lang, T::CurveExplain)));
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(dim(tr(lang, T::Presets)));
+                    if ui.small_button(tr(lang, T::FactoryReset)).clicked() {
+                        // Factory curve of the Rainbow 2 Pro (read from a new unit).
+                        c.deadzone = 12;
+                        c.center_comp = 0;
+                        c.point_a = (30, 30);
+                        c.point_b = (70, 70);
+                        c.outer = 95;
+                        c.max_out = 100;
+                    }
                     for (label, a, b) in [
                         (T::PresetLinear, (30, 30), (70, 70)),
                         (T::PresetDelayed, (30, 30), (70, 50)),
@@ -967,51 +1023,152 @@ impl App {
         });
     }
 
+    fn page_vibration(&mut self, ui: &mut egui::Ui) {
+        let lang = self.lang();
+        let mut preview: Option<(u16, u16)> = None;
+        let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
+            return no_profile(ui, lang);
+        };
+        card(ui, |ui| {
+            ui.label(dim(tr(lang, T::VibHint)));
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(tr(lang, T::Presets)).color(TEXT_DIM));
+                for (label, v) in [
+                    (T::VibOff, Vibration::OFF),
+                    (T::VibWeak, Vibration { min: 50, max: 100 }),
+                    (T::VibStandard, Vibration { min: 50, max: 150 }),
+                    (T::VibStrong, Vibration { min: 50, max: 200 }),
+                    (T::FactoryReset, Vibration::FACTORY),
+                ] {
+                    if ui.button(tr(lang, label)).clicked() {
+                        for m in 0..VIBRATION_MOTORS {
+                            let _ = profile.set_vibration(m, v);
+                        }
+                        preview = Some((u16::MAX, u16::MAX));
+                    }
+                }
+            });
+        });
+        ui.add_space(10.0);
+        // Laid out like the controller: triggers on top, grips below.
+        // Motor index, name, and the OS rumble that reaches it (strong = left
+        // grip, weak = right grip; trigger motors are not reachable).
+        let rows = [
+            [(2usize, T::VibMotor3, None), (3, T::VibMotor4, None)],
+            [
+                (0, T::VibGripL, Some((u16::MAX, 0u16))),
+                (1, T::VibGripR, Some((0u16, u16::MAX))),
+            ],
+        ];
+        let mut motor_card =
+            |ui: &mut egui::Ui, (m, name, rumble): (usize, T, Option<(u16, u16)>)| {
+                card(ui, |ui| {
+                    ui.label(RichText::new(tr(lang, name)).strong());
+                    if rumble.is_none() {
+                        ui.label(dim(tr(lang, T::VibNoTest)));
+                    }
+                    let mut v = profile.vibration(m);
+                    let before = v;
+                    ui.spacing_mut().slider_width = (ui.available_width() - 150.0).max(60.0);
+                    let slider = |ui: &mut egui::Ui, label: T, val: &mut u8| {
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [70.0, 20.0],
+                                egui::Label::new(RichText::new(tr(lang, label)).color(TEXT_DIM)),
+                            );
+                            ui.add(egui::Slider::new(val, 0..=255))
+                        })
+                        .inner
+                    };
+                    let rmin = slider(ui, T::VibMin, &mut v.min);
+                    let rmax = slider(ui, T::VibMax, &mut v.max);
+                    if v != before {
+                        if v.min != before.min {
+                            v.max = v.max.max(v.min);
+                        } else {
+                            v.min = v.min.min(v.max);
+                        }
+                        let _ = profile.set_vibration(m, v);
+                    }
+                    // Preview when a slider is clicked or released: write the
+                    // vibration, then rumble at the weakest (min) or strongest
+                    // (max) game level on this motor only.
+                    if let Some((s, w)) = rumble {
+                        let level = |full: u16, top: bool| match (full, top) {
+                            (0, _) => 0,
+                            (_, true) => u16::MAX,
+                            (_, false) => 300,
+                        };
+                        if rmax.drag_stopped() || rmax.clicked() {
+                            preview = Some((level(s, true), level(w, true)));
+                        } else if rmin.drag_stopped() || rmin.clicked() {
+                            preview = Some((level(s, false), level(w, false)));
+                        }
+                    }
+                });
+            };
+        let wide = ui.available_width() >= 700.0;
+        for row in rows {
+            if wide {
+                ui.columns(2, |cols| {
+                    for (col, motor) in cols.iter_mut().zip(row) {
+                        motor_card(col, motor);
+                    }
+                });
+            } else {
+                for motor in row {
+                    motor_card(ui, motor);
+                    ui.add_space(8.0);
+                }
+            }
+            ui.add_space(8.0);
+        }
+        if let Some(r) = preview {
+            self.preview_vibration(r);
+        }
+    }
+
+    /// Writes only the edited vibration to the controller, then rumbles.
+    fn preview_vibration(&mut self, rumble: (u16, u16)) {
+        let (Some(snap), Some(edit)) = (&self.snap, &self.edit) else {
+            return;
+        };
+        let (Some(current), Some(edited)) = (&snap.profile, &edit.profile) else {
+            return;
+        };
+        let mut p = current.clone();
+        for m in 0..VIBRATION_MOTORS {
+            let _ = p.set_vibration(m, edited.vibration(m));
+        }
+        if p == *current {
+            if let Some(l) = &self.live {
+                l.rumble(rumble.0, rumble.1);
+            }
+            return;
+        }
+        let delta = DeviceConfig {
+            profile: Some(config::to_hex(&p.to_bytes())),
+            ..Default::default()
+        };
+        self.pending_rumble = Some(rumble);
+        self.preview_inflight = true;
+        self.send(Request::Apply(delta));
+    }
+
     fn page_lights(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         let live = self.live_now.clone();
         let Some(edit) = &mut self.edit else {
             return no_profile(ui, lang);
         };
-        let logo = logo_color(edit.logo_colors);
         card(ui, |ui| {
-            let marks = Marks {
-                turbo: 0,
-                remapped: 0,
-                strip: edit.led_brightness,
-                light: MODE_LIGHT_XINPUT,
-                logo,
-                profile: None,
-                lights_only: true,
-            };
+            let marks = light_marks(edit, true);
             ui.vertical_centered(|ui| {
                 ui.set_max_width(380.0);
                 pad::pad(ui, None, &marks, &live);
             });
             ui.label(dim(tr(lang, T::ModeLightHint)));
-        });
-        ui.add_space(10.0);
-        card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(tr(lang, T::Brightness)).strong());
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button(tr(lang, T::FactoryReset)).clicked() {
-                        edit.led_brightness = Some(0xff);
-                    }
-                });
-            });
-            ui.label(dim(tr(lang, T::BrightnessHint)));
-            if let Some(b) = &mut edit.led_brightness {
-                let mut pct = (u32::from(*b) * 100 / 255) as u8;
-                if ui
-                    .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
-                    .changed()
-                {
-                    *b = (u32::from(pct) * 255 / 100) as u8;
-                }
-            } else {
-                ui.label(dim("—"));
-            }
         });
         ui.add_space(10.0);
         card(ui, |ui| {
@@ -1067,6 +1224,131 @@ impl App {
                     });
             }
         });
+        ui.add_space(10.0);
+        let follows_before = self.settings.strip_follows_logo;
+        let mut resend: Option<DeviceConfig> = None;
+        let resend_ok = self.connected && !self.busy && self.worker.is_some();
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr(lang, T::StripTitle)).strong());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button(tr(lang, T::FactoryReset)).clicked() {
+                        edit.strip = Some(Strip::default());
+                        edit.led_brightness = Some(0xff);
+                        self.settings.strip_follows_logo = false;
+                    }
+                });
+            });
+            // One brightness for every light mode: 72 (mode light) and the
+            // custom effect's own brightness move together.
+            if let Some(b) = &mut edit.led_brightness {
+                let mut pct = (u32::from(*b) * 100 / 255) as u8;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tr(lang, T::Brightness)).color(TEXT_DIM));
+                    if ui
+                        .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
+                        .changed()
+                    {
+                        *b = (u32::from(pct) * 255 / 100) as u8;
+                        if let Some(st) = &mut edit.strip {
+                            st.bright = (*b).max(strip::MIN_BRIGHT);
+                        }
+                    }
+                });
+                ui.label(dim(tr(lang, T::BrightnessHint)));
+            }
+            ui.add_space(6.0);
+            ui.checkbox(
+                &mut self.settings.strip_follows_logo,
+                tr(lang, T::StripFollowsLogo),
+            );
+            ui.add_space(4.0);
+            // The strip state cannot be read back and can change on the
+            // controller (FN): allow sending it again unconditionally.
+            if ui
+                .add_enabled(resend_ok, egui::Button::new(tr(lang, T::StripResend)))
+                .on_hover_text(tr(lang, T::StripResendHint))
+                .clicked()
+            {
+                resend = Some(DeviceConfig {
+                    led_brightness: edit.led_brightness,
+                    strip: edit.strip.clone(),
+                    ..Default::default()
+                });
+            }
+            ui.add_space(6.0);
+            ui.separator();
+            ui.label(RichText::new(tr(lang, T::FnCycle)).strong());
+            ui.label(dim(tr(lang, T::FnCycleHint)));
+            ui.add_space(4.0);
+            ui.label(RichText::new(tr(lang, T::FnSlot1)).color(TEXT_DIM));
+            ui.label(RichText::new(tr(lang, T::FnSlot3)).color(TEXT_DIM));
+            ui.add_space(6.0);
+            ui.label(RichText::new(tr(lang, T::StripCustomTitle)).strong());
+            ui.label(dim(tr(lang, T::StripHint)));
+            let locked = self.settings.strip_follows_logo;
+            let Some(st) = &mut edit.strip else {
+                ui.horizontal(|ui| {
+                    ui.label(dim(tr(lang, T::StripUnknown)));
+                    if ui.button(tr(lang, T::StripCustomize)).clicked() {
+                        edit.strip = Some(Strip::default());
+                    }
+                });
+                return;
+            };
+            ui.add_enabled_ui(!locked, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tr(lang, T::StripEffect)).color(TEXT_DIM));
+                    for (e, t) in Effect::ALL.into_iter().zip([
+                        T::StripStatic,
+                        T::StripBreathing,
+                        T::StripGradient,
+                        T::StripFlicker,
+                    ]) {
+                        ui.selectable_value(&mut st.effect, e, tr(lang, t));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tr(lang, T::StripSpeed)).color(TEXT_DIM));
+                    ui.add_enabled(
+                        st.effect != Effect::Static,
+                        egui::Slider::new(&mut st.speed, 0..=255),
+                    );
+                });
+                ui.checkbox(&mut st.same, tr(lang, T::StripSame));
+                let sides: &[(bool, T)] = if st.same {
+                    &[(false, T::StripColors)]
+                } else {
+                    &[(false, T::StripLeft), (true, T::StripRight)]
+                };
+                for &(right, label) in sides {
+                    let list = if right { &mut st.right } else { &mut st.left };
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(tr(lang, label)).color(TEXT_DIM));
+                        let mut remove = None;
+                        for (i, c) in list.iter_mut().enumerate() {
+                            ui.color_edit_button_srgb(c);
+                            if i > 0 && ui.small_button("✕").clicked() {
+                                remove = Some(i);
+                            }
+                        }
+                        if let Some(i) = remove {
+                            list.remove(i);
+                        }
+                        if list.len() < strip::MAX_COLORS && ui.small_button("+").clicked() {
+                            let last = *list.last().unwrap_or(&[255, 255, 255]);
+                            list.push(last);
+                        }
+                    });
+                }
+            });
+        });
+        if self.settings.strip_follows_logo != follows_before && self.shots.is_none() {
+            let _ = self.settings.save();
+        }
+        if let Some(c) = resend {
+            self.send(Request::Apply(c));
+        }
     }
 
     fn page_macros(&mut self, ui: &mut egui::Ui) {
@@ -1365,8 +1647,38 @@ impl App {
         });
         ui.add_space(10.0);
         card(ui, |ui| {
-            ui.label(dim(format!("padtune {}", env!("CARGO_PKG_VERSION"))));
-            ui.label(dim(config::config_dir().display().to_string()));
+            ui.label(RichText::new(tr(lang, T::Info)).strong());
+            ui.add_space(4.0);
+            egui::Grid::new("info")
+                .num_columns(2)
+                .spacing([20.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label(RichText::new(tr(lang, T::Version)).color(TEXT_DIM));
+                    ui.label(format!("PadTune {}", env!("CARGO_PKG_VERSION")));
+                    ui.end_row();
+                    ui.label(RichText::new(tr(lang, T::ConfigFolder)).color(TEXT_DIM));
+                    let dir = config::config_dir();
+                    if ui
+                        .link(dir.display().to_string())
+                        .on_hover_text(tr(lang, T::OpenFolder))
+                        .clicked()
+                    {
+                        let _ = std::fs::create_dir_all(&dir);
+                        super::desktop::open_external(&dir.display().to_string());
+                    }
+                    ui.end_row();
+                    ui.label(RichText::new(tr(lang, T::Repository)).color(TEXT_DIM));
+                    let repo = env!("CARGO_PKG_REPOSITORY");
+                    if ui.link(repo).clicked() {
+                        super::desktop::open_external(repo);
+                    }
+                    ui.end_row();
+                    ui.label(RichText::new(tr(lang, T::LicenseLabel)).color(TEXT_DIM));
+                    ui.label("MIT");
+                    ui.end_row();
+                });
+            ui.add_space(4.0);
+            ui.label(dim(tr(lang, T::Unofficial)));
         });
         if self.settings != before && self.shots.is_none() {
             if self.settings.autostart != before.autostart
@@ -1392,6 +1704,26 @@ impl App {
         match s.info.polling_code.and_then(polling_hz) {
             Some(hz) => format!("{link} · {hz} Hz"),
             None => link.to_string(),
+        }
+    }
+
+    /// With "strip follows logo", keep the strip a solid copy of the HOME
+    /// logo colour (or of the mode colour when the logo follows the mode).
+    fn sync_strip_with_logo(&mut self) {
+        if !self.settings.strip_follows_logo {
+            return;
+        }
+        let Some(e) = &mut self.edit else { return };
+        // Only the hue is shared: the logo's intensity is scaled up to full,
+        // the strip keeps its own brightness.
+        let c = logo_color(e.logo_colors).unwrap_or(MODE_LIGHT_XINPUT);
+        let rgb = [c.r(), c.g(), c.b()];
+        let peak = rgb.iter().copied().max().unwrap_or(0).max(1);
+        let full = rgb.map(|v| (u32::from(v) * 255 / u32::from(peak)) as u8);
+        let bright = e.led_brightness.unwrap_or(255).max(strip::MIN_BRIGHT);
+        let want = Strip::solid(full, bright);
+        if e.strip.as_ref() != Some(&want) {
+            e.strip = Some(want);
         }
     }
 
@@ -1456,8 +1788,9 @@ impl eframe::App for App {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_worker();
+        self.sync_strip_with_logo();
         if let Some(l) = &self.live
-            && let Ok(st) = l.lock()
+            && let Ok(st) = l.state.lock()
         {
             self.live_now = st.clone();
         }
@@ -1491,6 +1824,7 @@ impl eframe::App for App {
                     Tab::Sticks => self.page_sticks(ui),
                     Tab::Triggers => self.page_triggers(ui),
                     Tab::Lights => self.page_lights(ui),
+                    Tab::Vibration => self.page_vibration(ui),
                     Tab::Macros => self.page_macros(ui),
                     Tab::Profiles => self.page_profiles(ui),
                     Tab::Settings => self.page_settings(ui),
@@ -1509,7 +1843,38 @@ fn model_name(marker: &str) -> &'static str {
     }
 }
 
+/// Highest polling rate a model supports (Rainbow 2 Pro: USB full speed,
+/// `bInterval` 1 ms).
+fn max_polling_hz(marker: &str) -> u32 {
+    if marker == "ZJ-C1pro" { 1000 } else { 2000 }
+}
+
 /// Key slots shown for a model (hides unused/reserved slots).
+/// The lights to draw, computed once from the editor state for every tab:
+/// light-strip brightness, the custom strip effect when PadTune knows it
+/// (otherwise the mode colour) and the HOME logo colour.
+fn light_marks(e: &Edit, lights_only: bool) -> Marks {
+    let rgb = |c: &[u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
+    Marks {
+        turbo: 0,
+        remapped: 0,
+        strip: e.led_brightness,
+        light: MODE_LIGHT_XINPUT,
+        logo: logo_color(e.logo_colors),
+        strip_custom: e.strip.as_ref().map(|st| {
+            let left = st.left.first().map_or(MODE_LIGHT_XINPUT, rgb);
+            let right = if st.same {
+                left
+            } else {
+                st.right.first().map_or(left, rgb)
+            };
+            (left, right)
+        }),
+        profile: None,
+        lights_only,
+    }
+}
+
 /// Custom XInput-mode logo colour, if one is set (black = follows the mode).
 fn logo_color(colors: Option<[[u8; 3]; 3]>) -> Option<Color32> {
     colors
@@ -1719,7 +2084,7 @@ fn keymap_editor(
                 .selectable_label(kind == T::MapButton, tr(lang, T::MapButton))
                 .clicked()
             {
-                *map = KeyMap::Button { target: slot as u8 };
+                *map = KeyMap::button(slot as u8);
             }
             if ui
                 .selectable_label(kind == T::MapKeyboard, tr(lang, T::MapKeyboard))
@@ -1733,19 +2098,39 @@ fn keymap_editor(
             }
         });
     ui.horizontal(|ui| match map {
-        KeyMap::Button { target } => {
-            let name = SLOT_NAMES
-                .get(usize::from(*target))
-                .copied()
-                .flatten()
-                .unwrap_or("?");
-            egui::ComboBox::from_id_salt(("target", slot))
-                .selected_text(name)
-                .show_ui(ui, |ui| {
-                    for &s in slots {
-                        ui.selectable_value(target, s as u8, SLOT_NAMES[s].unwrap_or("?"));
+        KeyMap::Button { targets } => {
+            // First target required, two more optional for a combination.
+            let name = |t: u8| {
+                if t == NO_KEY {
+                    "—"
+                } else {
+                    SLOT_NAMES
+                        .get(usize::from(t))
+                        .copied()
+                        .flatten()
+                        .unwrap_or("?")
+                }
+            };
+            ui.vertical(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (i, t) in targets.iter_mut().enumerate() {
+                        if i > 0 {
+                            ui.label("+");
+                        }
+                        egui::ComboBox::from_id_salt(("target", slot, i))
+                            .selected_text(name(*t))
+                            .width(70.0)
+                            .show_ui(ui, |ui| {
+                                if i > 0 {
+                                    ui.selectable_value(t, NO_KEY, "—");
+                                }
+                                for &s in slots {
+                                    ui.selectable_value(t, s as u8, SLOT_NAMES[s].unwrap_or("?"));
+                                }
+                            });
                     }
                 });
+            });
         }
         KeyMap::Keyboard {
             modifiers, key1, ..
@@ -1776,7 +2161,7 @@ fn keymap_editor(
 }
 
 /// Draws the stick response curve.
-fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>) {
+fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>, axes: (&str, &str)) {
     let size = Vec2::splat(ui.available_width().min(320.0));
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::hover());
     let r = resp.rect;
@@ -1825,6 +2210,22 @@ fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>) {
             Stroke::new(1.5, OK),
         );
     }
+    // Axis captions: X = how far the stick is pushed, Y = what the game gets.
+    let font = egui::FontId::proportional(11.0);
+    painter.text(
+        r.left_bottom() + Vec2::new(6.0, -4.0),
+        egui::Align2::LEFT_BOTTOM,
+        format!("{} →", axes.0),
+        font.clone(),
+        TEXT_DIM,
+    );
+    painter.text(
+        r.left_top() + Vec2::new(6.0, 4.0),
+        egui::Align2::LEFT_TOP,
+        format!("↑ {}", axes.1),
+        font,
+        TEXT_DIM,
+    );
 }
 
 fn trigger_bar(ui: &mut egui::Ui, t: &Trigger, live: Option<f32>) {

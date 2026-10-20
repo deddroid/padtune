@@ -53,17 +53,44 @@ fn slot(b: Button) -> Option<usize> {
 
 pub type Shared = Arc<Mutex<LiveState>>;
 
+/// Handle to the input thread.
+pub struct Live {
+    pub state: Shared,
+    rumble: std::sync::mpsc::Sender<(u16, u16)>,
+}
+
+impl Live {
+    /// Plays a short rumble so the vibration settings can be felt, through
+    /// the OS force-feedback API: `strong` drives the left grip motor, `weak`
+    /// the right one (0..=65535 each; the controller then scales it with its
+    /// own min/max). Trigger motors are not reachable this way.
+    pub fn rumble(&self, strong: u16, weak: u16) {
+        let _ = self.rumble.send((strong, weak));
+    }
+}
+
 /// Starts the reader thread; `wake` requests a repaint on changes.
-pub fn spawn(wake: impl Fn() + Send + 'static) -> Shared {
+pub fn spawn(wake: impl Fn() + Send + 'static) -> Live {
     let state: Shared = Arc::default();
     let out = state.clone();
+    let (rumble_tx, rumble_rx) = std::sync::mpsc::channel::<(u16, u16)>();
     std::thread::Builder::new()
         .name("padtune-input".into())
         .spawn(move || {
             let Ok(mut gilrs) = Gilrs::new() else { return };
             let mut window_start = Instant::now();
             let mut events = 0u32;
+            let mut playing: Option<(gilrs::ff::Effect, Instant)> = None;
             loop {
+                if let Ok((strong, weak)) = rumble_rx.try_recv() {
+                    playing = play_rumble(&mut gilrs, strong, weak).map(|e| (e, Instant::now()));
+                }
+                if playing
+                    .as_ref()
+                    .is_some_and(|(_, t)| t.elapsed() > Duration::from_secs(2))
+                {
+                    playing = None;
+                }
                 let mut changed = false;
                 while let Some(ev) = gilrs.next_event_blocking(Some(Duration::from_millis(250))) {
                     let pad = gilrs.gamepad(ev.id);
@@ -136,5 +163,40 @@ pub fn spawn(wake: impl Fn() + Send + 'static) -> Shared {
             }
         })
         .expect("spawn input thread");
-    out
+    Live {
+        state: out,
+        rumble: rumble_tx,
+    }
+}
+
+fn play_rumble(gilrs: &mut Gilrs, strong: u16, weak: u16) -> Option<gilrs::ff::Effect> {
+    use gilrs::ff::{BaseEffect, BaseEffectType, EffectBuilder, Replay, Ticks};
+    let ids: Vec<_> = gilrs
+        .gamepads()
+        .filter(|(_, p)| p.vendor_id() == Some(VENDOR_ID) && p.is_ff_supported())
+        .map(|(id, _)| id)
+        .collect();
+    if ids.is_empty() {
+        return None;
+    }
+    let scheduling = Replay {
+        play_for: Ticks::from_ms(900),
+        ..Default::default()
+    };
+    let effect = EffectBuilder::new()
+        .add_effect(BaseEffect {
+            kind: BaseEffectType::Strong { magnitude: strong },
+            scheduling,
+            ..Default::default()
+        })
+        .add_effect(BaseEffect {
+            kind: BaseEffectType::Weak { magnitude: weak },
+            scheduling,
+            ..Default::default()
+        })
+        .gamepads(&ids)
+        .finish(gilrs)
+        .ok()?;
+    effect.play().ok()?;
+    Some(effect)
 }

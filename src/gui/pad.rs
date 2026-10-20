@@ -195,6 +195,8 @@ pub struct Marks {
     /// Colour of the strip and Home light ("mode light": green in XInput,
     /// red in Switch mode, per the official manual).
     pub light: Color32,
+    /// Custom strip colours (left, right) to preview instead of the mode light.
+    pub strip_custom: Option<(Color32, Color32)>,
     /// Custom HOME logo colour (None = follows the mode colour).
     pub logo: Option<Color32>,
     /// Active on-board configuration 0..=3 (white LEDs), if known.
@@ -218,7 +220,7 @@ pub fn pad(
 
     // Light strip under the edge of the body, dimmed by the brightness.
     let alpha = f32::from(marks.strip.unwrap_or(255)) / 255.0;
-    let strip_col = marks.light.gamma_multiply(alpha.max(0.0));
+    let (left_col, right_col) = marks.strip_custom.unwrap_or((marks.light, marks.light));
     let strip: Vec<Pos2> = [
         (0.14, 0.20),
         (0.09, 0.40),
@@ -236,7 +238,17 @@ pub fn pad(
     .map(|&(x, y)| at(x, y))
     .collect();
     if alpha > 0.0 {
-        painter.add(egui::Shape::line(strip, Stroke::new(10.0 * s, strip_col)));
+        let (l, r) = strip.split_at(strip.len() / 2 + 1);
+        painter.add(egui::Shape::line(
+            l.to_vec(),
+            Stroke::new(10.0 * s, left_col.gamma_multiply(alpha)),
+        ));
+        let mut r = r.to_vec();
+        r.insert(0, l[l.len() - 1]);
+        painter.add(egui::Shape::line(
+            r,
+            Stroke::new(10.0 * s, right_col.gamma_multiply(alpha)),
+        ));
     }
 
     // Body: rounded top bridge and two grips.
