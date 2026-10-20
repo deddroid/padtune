@@ -24,7 +24,9 @@ pub fn config_dir() -> PathBuf {
     if let Some(p) = std::env::var_os("BIGBIGCTL_CONFIG_DIR") {
         return PathBuf::from(p);
     }
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(APP_DIR)
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(APP_DIR)
 }
 
 fn read_toml<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> Result<T> {
@@ -59,7 +61,12 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { language: Lang::from_env(), autostart: false, close_to_tray: true, start_hidden: false }
+        Self {
+            language: Lang::from_env(),
+            autostart: false,
+            close_to_tray: true,
+            start_hidden: false,
+        }
     }
 }
 
@@ -104,7 +111,9 @@ pub struct DeviceConfig {
 
 impl DeviceConfig {
     pub fn profile(&self) -> Option<Result<Profile>> {
-        self.profile.as_deref().map(|h| from_hex(h).and_then(|b| Profile::from_bytes(&b)))
+        self.profile
+            .as_deref()
+            .map(|h| from_hex(h).and_then(|b| Profile::from_bytes(&b)))
     }
 
     /// Fields of `self` that differ from `current` (what has to be sent).
@@ -167,7 +176,13 @@ pub fn profiles_dir() -> PathBuf {
 pub fn slug(name: &str) -> String {
     let s: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if s.is_empty() { "profile".into() } else { s }
 }
@@ -203,7 +218,10 @@ mod tests {
 
     #[test]
     fn hex_roundtrip() {
-        assert_eq!(from_hex(&to_hex(&[0, 1, 0xab, 0xff])).unwrap(), [0, 1, 0xab, 0xff]);
+        assert_eq!(
+            from_hex(&to_hex(&[0, 1, 0xab, 0xff])).unwrap(),
+            [0, 1, 0xab, 0xff]
+        );
         assert!(from_hex("abc").is_err());
     }
 
@@ -231,7 +249,12 @@ mod tests {
 
     #[test]
     fn settings_toml_roundtrip() {
-        let s = Settings { language: Lang::It, autostart: true, close_to_tray: false, start_hidden: true };
+        let s = Settings {
+            language: Lang::It,
+            autostart: true,
+            close_to_tray: false,
+            start_hidden: true,
+        };
         let back: Settings = toml::from_str(&toml::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
         // Unknown/missing fields fall back to defaults.

@@ -6,8 +6,8 @@
 
 pub mod actions;
 pub mod config;
-pub mod i18n;
 pub mod device;
+pub mod i18n;
 pub mod protocol;
 
 /// Errors produced by the library.

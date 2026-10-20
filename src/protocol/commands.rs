@@ -3,7 +3,7 @@
 //! Opcodes come from the official PC assistant (`DevMgr.dll`) and match the
 //! independent implementations credited in `docs/PROTOCOL.md`.
 
-use super::frame::{short, REPORT_LEN};
+use super::frame::{REPORT_LEN, short};
 use crate::{Error, Result};
 
 pub mod op {
@@ -84,12 +84,18 @@ pub const POLLING_CODES: [(u8, u32); 4] = [(2, 250), (1, 500), (0, 1000), (3, 20
 
 /// Polling-rate code → Hz.
 pub fn polling_hz(code: u8) -> Option<u32> {
-    POLLING_CODES.iter().find(|(c, _)| *c == code).map(|(_, hz)| *hz)
+    POLLING_CODES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, hz)| *hz)
 }
 
 /// Hz → polling-rate code.
 pub fn polling_code(hz: u32) -> Option<u8> {
-    POLLING_CODES.iter().find(|(_, h)| *h == hz).map(|(c, _)| *c)
+    POLLING_CODES
+        .iter()
+        .find(|(_, h)| *h == hz)
+        .map(|(c, _)| *c)
 }
 
 /// `SetRateOfReturn`: `A5 05 F6 code sum`.
@@ -128,13 +134,18 @@ pub struct Power {
 
 pub fn decode_power(payload: &[u8]) -> Result<Power> {
     need(payload, 2, "power")?;
-    Ok(Power { battery: payload[0].min(100), status: payload[1] })
+    Ok(Power {
+        battery: payload[0].min(100),
+        status: payload[1],
+    })
 }
 
 /// Logo LED colours from `F5`.
 pub fn decode_logo_led(payload: &[u8]) -> Result<[[u8; 3]; 3]> {
     need(payload, 9, "logo LED")?;
-    Ok(std::array::from_fn(|i| [payload[i * 3], payload[i * 3 + 1], payload[i * 3 + 2]]))
+    Ok(std::array::from_fn(|i| {
+        [payload[i * 3], payload[i * 3 + 1], payload[i * 3 + 2]]
+    }))
 }
 
 fn need(payload: &[u8], n: usize, what: &str) -> Result<()> {
@@ -190,7 +201,10 @@ pub struct MacroSlotInfo {
 
 pub fn decode_macro_list(payload: &[u8]) -> Result<Vec<MacroSlotInfo>> {
     if !payload.len().is_multiple_of(4) || payload.is_empty() {
-        return Err(Error::Protocol(format!("macro list has {} bytes", payload.len())));
+        return Err(Error::Protocol(format!(
+            "macro list has {} bytes",
+            payload.len()
+        )));
     }
     Ok(payload
         .as_chunks::<4>()
@@ -206,7 +220,7 @@ pub fn decode_macro_list(payload: &[u8]) -> Result<Vec<MacroSlotInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::frame::{parse, Frame};
+    use crate::protocol::frame::{Frame, parse};
 
     fn payload(report: &[u8]) -> Vec<u8> {
         match parse(report).unwrap() {
@@ -226,7 +240,9 @@ mod tests {
         assert_eq!(m.marker, "ZJ-C1pro");
         assert_eq!(m.prefix, [0x56, 0x51, 0x01]);
 
-        let ef = [0xa5, 0x0c, 0xef, 0x22, 0x20, 0xb2, 0x1a, 0xff, 0x02, 0x06, 0x08, 0xbd];
+        let ef = [
+            0xa5, 0x0c, 0xef, 0x22, 0x20, 0xb2, 0x1a, 0xff, 0x02, 0x06, 0x08, 0xbd,
+        ];
         assert_eq!(decode_uuid(&payload(&ef)).unwrap(), "2220B21AFF020608");
 
         let d3 = [0xa5, 0x0a, 0xd3, 0x68, 0x0b, 0x18, 0x01, 0x94, 0x02, 0xa4];
@@ -239,10 +255,16 @@ mod tests {
     #[test]
     fn write_commands_match_official_encoders() {
         // DevMgr.dll: SetRateOfReturn checksum = value - 0x60.
-        assert_eq!(set_polling(1).unwrap()[..5], [0xa5, 0x05, 0xf6, 0x01, 0x01u8.wrapping_sub(0x60)]);
+        assert_eq!(
+            set_polling(1).unwrap()[..5],
+            [0xa5, 0x05, 0xf6, 0x01, 0x01u8.wrapping_sub(0x60)]
+        );
         assert!(set_polling(9).is_err());
         // SetLEDBrightRequest checksum = value + 0x1c.
-        assert_eq!(set_led_brightness(0x80)[..5], [0xa5, 0x05, 0x72, 0x80, 0x9c]);
+        assert_eq!(
+            set_led_brightness(0x80)[..5],
+            [0xa5, 0x05, 0x72, 0x80, 0x9c]
+        );
         // Save2Device is the fixed frame a5 05 0e 00 b8.
         assert_eq!(save_to_flash()[..5], [0xa5, 0x05, 0x0e, 0x00, 0xb8]);
         // SetLogoLED checksum = sum(colours) - 0x59.

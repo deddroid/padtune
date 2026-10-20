@@ -84,7 +84,10 @@ pub fn parse(report: &[u8]) -> Result<Frame<'_>, Error> {
         _ => report,
     };
     if wire.len() < 4 {
-        return Err(Error::Protocol(format!("frame too short ({} bytes)", wire.len())));
+        return Err(Error::Protocol(format!(
+            "frame too short ({} bytes)",
+            wire.len()
+        )));
     }
     let len = wire[1] as usize;
     let min = if wire[0] == LONG { 5 } else { 4 };
@@ -108,7 +111,9 @@ pub fn parse(report: &[u8]) -> Result<Frame<'_>, Error> {
             seq: wire[3],
             payload: &wire[4..len - 1],
         }),
-        other => Err(Error::Protocol(format!("unknown frame magic 0x{other:02X}"))),
+        other => Err(Error::Protocol(format!(
+            "unknown frame magic 0x{other:02X}"
+        ))),
     }
 }
 
@@ -119,7 +124,11 @@ pub fn reassemble(op: u8, frames: &[Frame<'_>]) -> Result<Vec<u8>, Error> {
     let mut parts: Vec<(u8, &[u8])> = Vec::with_capacity(frames.len());
     for f in frames {
         match f {
-            Frame::Long { op: o, seq, payload } if *o == op => parts.push((*seq, payload)),
+            Frame::Long {
+                op: o,
+                seq,
+                payload,
+            } if *o == op => parts.push((*seq, payload)),
             other => {
                 return Err(Error::Protocol(format!(
                     "unexpected frame 0x{:02X} while reassembling 0x{op:02X}",
@@ -163,7 +172,10 @@ mod tests {
         let zkm = [0xa5, 0x05, 0x0b, 0x36, 0xeb];
         assert_eq!(
             parse(&zkm).unwrap(),
-            Frame::Short { cmd: 0x0b, payload: &[0x36] }
+            Frame::Short {
+                cmd: 0x0b,
+                payload: &[0x36]
+            }
         );
         let size = [0xa5, 0x0a, 0xd3, 0x68, 0x0b, 0x18, 0x01, 0x94, 0x02, 0xa4];
         assert_eq!(parse(&size).unwrap().op(), 0xd3);
@@ -176,7 +188,13 @@ mod tests {
     #[test]
     fn rejects_bad_checksum() {
         let bad = [0xa5, 0x05, 0x0b, 0x36, 0xec];
-        assert!(matches!(parse(&bad), Err(Error::Checksum { expected: 0xeb, found: 0xec })));
+        assert!(matches!(
+            parse(&bad),
+            Err(Error::Checksum {
+                expected: 0xeb,
+                found: 0xec
+            })
+        ));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! High-level operations shared by the CLI and the GUI.
 
+use crate::config::{DeviceConfig, to_hex};
 use crate::device::Device;
 use crate::protocol::commands::{self, MacroSlotInfo, Mode};
 use crate::protocol::profile::Profile;
-use crate::config::{to_hex, DeviceConfig};
 use crate::{Error, Result};
 
 /// Everything the controller reports about itself.
@@ -24,17 +24,26 @@ pub use crate::protocol::commands::polling_hz;
 
 /// Reads identity and status (read-only commands only).
 pub fn read_info(dev: &Device) -> Result<DeviceInfo> {
-    let mode = dev.request(&commands::get_mode()).and_then(|p| commands::decode_mode(&p)).ok();
+    let mode = dev
+        .request(&commands::get_mode())
+        .and_then(|p| commands::decode_mode(&p))
+        .ok();
     let zkm_version = dev
         .request(&commands::get_zkm_version())
         .and_then(|p| commands::decode_zkm_version(&p))
         .ok();
-    let uuid = dev.request(&commands::get_uuid()).and_then(|p| commands::decode_uuid(&p)).ok();
+    let uuid = dev
+        .request(&commands::get_uuid())
+        .and_then(|p| commands::decode_uuid(&p))
+        .ok();
     let profile_size = dev
         .request(&commands::get_profile_size())
         .and_then(|p| commands::decode_profile_size(&p))
         .ok();
-    let polling_code = dev.request(&commands::get_polling()).ok().and_then(|p| p.get(1).copied());
+    let polling_code = dev
+        .request(&commands::get_polling())
+        .ok()
+        .and_then(|p| p.get(1).copied());
     Ok(DeviceInfo {
         path: dev.info.path.clone(),
         vid: dev.info.vendor_id,
@@ -71,6 +80,25 @@ pub struct Snapshot {
     pub logo_colors: Option<[[u8; 3]; 3]>,
     pub power: Option<commands::Power>,
     pub macros: Vec<MacroSlotInfo>,
+    /// Raw `GetWirelessFlag` (FA) reply byte.
+    pub wireless_flag: Option<u8>,
+    pub connection: Option<Link>,
+}
+
+/// How the controller reaches the PC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Link {
+    Usb,
+    Dongle,
+}
+
+/// Maps the `FA` flag to a link type. Verified on hardware: `01` over the
+/// USB cable. Other values stay unknown until observed.
+pub fn link_from_flag(flag: u8) -> Option<Link> {
+    match flag {
+        0x01 => Some(Link::Usb),
+        _ => None,
+    }
 }
 
 impl Snapshot {
@@ -89,14 +117,31 @@ impl Snapshot {
 pub fn read_snapshot(dev: &Device) -> Result<Snapshot> {
     let info = read_info(dev)?;
     let profile = read_profile(dev).ok();
-    let led_brightness = dev.request(&commands::get_led_brightness()).ok().and_then(|p| p.first().copied());
+    let led_brightness = dev
+        .request(&commands::get_led_brightness())
+        .ok()
+        .and_then(|p| p.first().copied());
     let logo_colors = dev
         .request(&commands::get_logo_led())
         .and_then(|p| commands::decode_logo_led(&p))
         .ok();
     let power = read_power(dev).ok();
     let macros = read_macro_list(dev).unwrap_or_default();
-    Ok(Snapshot { info, profile, led_brightness, logo_colors, power, macros })
+    let wireless_flag = dev
+        .request(&commands::get_wireless_flag())
+        .ok()
+        .and_then(|p| p.first().copied());
+    let connection = wireless_flag.and_then(link_from_flag);
+    Ok(Snapshot {
+        info,
+        profile,
+        led_brightness,
+        logo_colors,
+        power,
+        macros,
+        wireless_flag,
+        connection,
+    })
 }
 
 pub fn read_power(dev: &Device) -> Result<commands::Power> {
@@ -118,7 +163,9 @@ fn set_and_verify(
     if matches(&readback) {
         Ok(())
     } else {
-        Err(Error::Protocol(format!("{what}: read-back does not match (got {readback:02x?})")))
+        Err(Error::Protocol(format!(
+            "{what}: read-back does not match (got {readback:02x?})"
+        )))
     }
 }
 
@@ -162,11 +209,15 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
 pub fn write_profile(dev: &Device, profile: &Profile) -> Result<()> {
     let status = dev.send_blob(&profile.write_frames())?;
     if status != 0 {
-        return Err(Error::Protocol(format!("profile write refused (status 0x{status:02x})")));
+        return Err(Error::Protocol(format!(
+            "profile write refused (status 0x{status:02x})"
+        )));
     }
     let back = read_profile(dev)?;
     if back.to_bytes() != profile.to_bytes() {
-        return Err(Error::Protocol("profile read-back differs from what was written".into()));
+        return Err(Error::Protocol(
+            "profile read-back differs from what was written".into(),
+        ));
     }
     Ok(())
 }

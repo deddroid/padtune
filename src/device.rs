@@ -23,7 +23,11 @@ fn debug_enabled() -> bool {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
+    bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Trims a report to its declared frame length for logging.
@@ -86,7 +90,9 @@ impl Device {
             .filter(|i| is_config(i))
             .find(|i| path.is_none_or(|p| i.path().to_string_lossy() == p))
             .ok_or(Error::NotFound)?;
-        let hid = info.open_device(&api).map_err(|e| Error::Hid(e.to_string()))?;
+        let hid = info
+            .open_device(&api)
+            .map_err(|e| Error::Hid(e.to_string()))?;
         let info = Candidate {
             path: info.path().to_string_lossy().into_owned(),
             vendor_id: info.vendor_id(),
@@ -95,7 +101,11 @@ impl Device {
             manufacturer: info.manufacturer_string().unwrap_or_default().to_string(),
             interface: info.interface_number(),
         };
-        Ok(Self { hid, info, debug: debug_enabled() })
+        Ok(Self {
+            hid,
+            info,
+            debug: debug_enabled(),
+        })
     }
 
     /// Writes one 64-byte report (prefixed with report ID 0).
@@ -105,7 +115,10 @@ impl Device {
         }
         let mut buf = [0u8; REPORT_LEN + 1];
         buf[1..].copy_from_slice(report);
-        let n = self.hid.write(&buf).map_err(|e| Error::Hid(e.to_string()))?;
+        let n = self
+            .hid
+            .write(&buf)
+            .map_err(|e| Error::Hid(e.to_string()))?;
         if n < REPORT_LEN {
             return Err(Error::Hid(format!("short write ({n} bytes)")));
         }
@@ -147,7 +160,9 @@ impl Device {
         let mut got = Vec::new();
         while Instant::now() < deadline {
             let left = deadline.saturating_duration_since(Instant::now());
-            let Some(report) = self.recv(left)? else { break };
+            let Some(report) = self.recv(left)? else {
+                break;
+            };
             match frame::parse(&report) {
                 Ok(f) if f.op() == op => {
                     got.push(report);
@@ -164,7 +179,11 @@ impl Device {
                 }
             }
         }
-        if got.is_empty() { Err(Error::Timeout(op)) } else { Ok(got) }
+        if got.is_empty() {
+            Err(Error::Timeout(op))
+        } else {
+            Ok(got)
+        }
     }
 
     /// Sends a short request and returns the payload of the matching reply.
@@ -198,8 +217,10 @@ impl Device {
             self.drain()?;
             self.send(report)?;
             let assembled = |reports: &[Vec<u8>]| -> Result<Vec<u8>> {
-                let frames: Vec<Frame> =
-                    reports.iter().map(|r| frame::parse(r)).collect::<Result<_>>()?;
+                let frames: Vec<Frame> = reports
+                    .iter()
+                    .map(|r| frame::parse(r))
+                    .collect::<Result<_>>()?;
                 frame::reassemble(op, &frames)
             };
             let res = self.collect(op, Duration::from_secs(3), |got| {
@@ -219,7 +240,10 @@ impl Device {
     /// Sends long frames and waits for the short ACK `A5 05 op status sum`.
     /// Returns the status byte (0 = success on every observed firmware).
     pub fn send_blob(&self, frames: &[[u8; REPORT_LEN]]) -> Result<u8> {
-        let op = frames.first().map(|f| f[2]).ok_or(Error::Invalid("empty blob".into()))?;
+        let op = frames
+            .first()
+            .map(|f| f[2])
+            .ok_or(Error::Invalid("empty blob".into()))?;
         self.drain()?;
         for f in frames {
             self.send(f)?;

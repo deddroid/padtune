@@ -26,7 +26,11 @@ impl Lang {
             if let Ok(v) = std::env::var(var)
                 && !v.is_empty()
             {
-                return if v.starts_with("it") { Lang::It } else { Lang::En };
+                return if v.starts_with("it") {
+                    Lang::It
+                } else {
+                    Lang::En
+                };
             }
         }
         Lang::En
@@ -76,8 +80,8 @@ strings! {
     ProfileFormat => "Profile format", "Formato profilo";
     Battery => "Battery", "Batteria";
     Connection => "Connection", "Connessione";
-    Wired => "USB cable", "Cavo USB";
-    Wireless => "2.4 GHz dongle", "Dongle 2,4 GHz";
+    Wired => "USB", "USB";
+    Wireless => "Dongle 2.4G", "Dongle 2,4G";
     PollingRate => "Polling rate", "Frequenza di polling";
     PollingHint => "How often the controller reports its state to the PC.", "Quante volte al secondo il controller invia il suo stato al PC.";
     Backup => "Back up configuration…", "Backup configurazione…";
@@ -133,6 +137,10 @@ strings! {
     NotVerified => "Not yet verified on hardware", "Non ancora verificato sull'hardware";
     UdevHint => "Permission denied: install the udev rule (see README).", "Permesso negato: installa la regola udev (vedi README).";
     Done => "Done", "Fatto";
+    PadHint => "Click a button to edit it. T = turbo, ↻ = remapped. Pressed buttons light up live.", "Clicca un tasto per modificarlo. T = turbo, ↻ = rimappato. I tasti premuti si illuminano in tempo reale.";
+    TurboHint => "Turbo repeats the button while it is held.", "Il turbo ripete il tasto finché lo tieni premuto.";
+    LiveInput => "Live input", "Input in tempo reale";
+    LiveUnavailable => "Live input not available (gamepad not visible to the system).", "Input live non disponibile (gamepad non visibile al sistema).";
     Error => "Error", "Errore";
 }
 

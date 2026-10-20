@@ -5,14 +5,16 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Align, Color32, Layout, RichText, Stroke, Vec2};
 
-use super::theme::{self, card, dim, ACCENT, ERR, OK, TEXT_DIM, WARN};
+use super::live::{self, LiveState};
+use super::pad::{self, Marks};
+use super::theme::{self, ACCENT, ERR, OK, TEXT_DIM, WARN, card, dim};
 use super::worker::{Event, Request, Worker};
 use crate::actions::Snapshot;
 use crate::config::{self, DeviceConfig, NamedProfile, Settings};
-use crate::i18n::{tr, Lang, T};
-use crate::protocol::commands::{polling_hz, POLLING_CODES};
+use crate::i18n::{Lang, T, tr};
+use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
-use crate::protocol::profile::{Curve, KeyMap, Profile, Trigger, SLOT_NAMES, TURBO_SPEEDS_HZ};
+use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -151,6 +153,9 @@ pub struct App {
     profiles: Vec<NamedProfile>,
     new_profile_name: String,
     shots: Option<ScreenshotRun>,
+    live: Option<live::Shared>,
+    live_now: LiveState,
+    selected_slot: usize,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -163,7 +168,10 @@ fn demo_snapshot() -> Snapshot {
             vid: 0x413d,
             pid: 0x2104,
             product: "XBOX 360 For Windows".into(),
-            mode: Some(Mode { prefix: [0x56, 0x51, 0x01], marker: "ZJ-C1pro".into() }),
+            mode: Some(Mode {
+                prefix: [0x56, 0x51, 0x01],
+                marker: "ZJ-C1pro".into(),
+            }),
             zkm_version: Some(b'6'),
             uuid: Some("2220B21AFF020608".into()),
             profile_size: Some(280),
@@ -172,8 +180,19 @@ fn demo_snapshot() -> Snapshot {
         profile,
         led_brightness: Some(255),
         logo_colors: Some([[0x10, 0xd0, 0x40], [0xff, 0x30, 0x30], [0x30, 0x60, 0xff]]),
-        power: Some(Power { battery: 100, status: 0 }),
-        macros: vec![MacroSlotInfo { crc: 0xcbe1, len: 10 }; 4],
+        power: Some(Power {
+            battery: 100,
+            status: 0,
+        }),
+        macros: vec![
+            MacroSlotInfo {
+                crc: 0xcbe1,
+                len: 10
+            };
+            4
+        ],
+        wireless_flag: Some(1),
+        connection: Some(crate::actions::Link::Usb),
     }
 }
 
@@ -188,7 +207,13 @@ impl App {
                 .iter()
                 .flat_map(|l| Tab::ALL.iter().map(move |t| (*l, *t)))
                 .collect();
-            ScreenshotRun { dir, steps, index: 0, frames: 0, pending: Default::default() }
+            ScreenshotRun {
+                dir,
+                steps,
+                index: 0,
+                frames: 0,
+                pending: Default::default(),
+            }
         });
         let demo = shots.is_some() || std::env::var_os("BIGBIGCTL_DEMO").is_some_and(|v| v != "0");
         let mut app = Self {
@@ -205,12 +230,28 @@ impl App {
             profiles: config::list_profiles(),
             new_profile_name: String::new(),
             shots,
+            live: None,
+            live_now: LiveState::default(),
+            selected_slot: 0,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
+            // Plausible live input so screenshots show the live widgets.
+            app.live_now = LiveState {
+                connected: true,
+                name: "demo".into(),
+                left: (-0.35, 0.55),
+                right: (0.62, -0.18),
+                lt: 0.42,
+                rt: 0.0,
+                pressed: 1 << 0,
+                events_per_sec: 0.0,
+            };
         } else {
             let ctx = cc.egui_ctx.clone();
             app.worker = Some(Worker::spawn(move || ctx.request_repaint()));
+            let ctx = cc.egui_ctx.clone();
+            app.live = Some(live::spawn(move || ctx.request_repaint()));
         }
         app
     }
@@ -254,7 +295,8 @@ impl App {
                 Event::Busy(b) => self.busy = b,
                 Event::Snapshot(s) => {
                     // Keep unapplied edits only if the device did not change underneath.
-                    let keep = self.dirty() && self.snap.as_ref().is_some_and(|o| o.config() == s.config());
+                    let keep = self.dirty()
+                        && self.snap.as_ref().is_some_and(|o| o.config() == s.config());
                     if keep {
                         self.snap = Some(*s);
                         self.connected = true;
@@ -300,7 +342,12 @@ impl App {
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.add_space(6.0);
-            ui.label(RichText::new("BIGBIG WON").strong().size(18.0).color(Color32::WHITE));
+            ui.label(
+                RichText::new("BIGBIG WON")
+                    .strong()
+                    .size(18.0)
+                    .color(Color32::WHITE),
+            );
         });
         ui.horizontal(|ui| {
             ui.add_space(6.0);
@@ -315,23 +362,37 @@ impl App {
         ui.add_space(14.0);
         for tab in Tab::ALL {
             let selected = self.tab == tab;
-            let text = RichText::new(format!("{}   {}", tab.icon(), self.t(tab.label()))).size(15.0);
-            let btn = egui::Button::new(if selected { text.color(Color32::WHITE) } else { text.color(TEXT_DIM) })
-                .fill(if selected { theme::ACCENT_SOFT } else { Color32::TRANSPARENT })
-                .stroke(if selected { Stroke::new(1.0, ACCENT) } else { Stroke::NONE })
-                .min_size(Vec2::new(ui.available_width(), 36.0));
+            let text =
+                RichText::new(format!("{}   {}", tab.icon(), self.t(tab.label()))).size(15.0);
+            let btn = egui::Button::new(if selected {
+                text.color(Color32::WHITE)
+            } else {
+                text.color(TEXT_DIM)
+            })
+            .fill(if selected {
+                theme::ACCENT_SOFT
+            } else {
+                Color32::TRANSPARENT
+            })
+            .stroke(if selected {
+                Stroke::new(1.0, ACCENT)
+            } else {
+                Stroke::NONE
+            })
+            .min_size(Vec2::new(ui.available_width(), 36.0));
             if ui.add(btn).clicked() {
                 self.tab = tab;
             }
         }
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.add_space(12.0);
+            let conn = self.connection_label();
             let (color, text) = if self.busy {
-                (WARN, self.t(T::Busy))
+                (WARN, self.t(T::Busy).to_string())
             } else if self.connected {
-                (OK, self.t(T::Connected))
+                (OK, conn)
             } else {
-                (ERR, self.t(T::Disconnected))
+                (ERR, self.t(T::Disconnected).to_string())
             };
             ui.horizontal(|ui| {
                 ui.add_space(6.0);
@@ -357,20 +418,29 @@ impl App {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let dirty = self.dirty();
                 let can = dirty && self.connected && !self.busy && self.worker.is_some();
-                let apply = egui::Button::new(RichText::new(self.t(T::Apply)).color(Color32::WHITE))
-                    .fill(if can { ACCENT } else { Color32::from_gray(60) });
+                let apply =
+                    egui::Button::new(RichText::new(self.t(T::Apply)).color(Color32::WHITE))
+                        .fill(if can { ACCENT } else { Color32::from_gray(60) });
                 if ui.add_enabled(can, apply).clicked()
                     && let (Some(e), Some(s)) = (&self.edit, &self.snap)
                 {
                     let delta = e.config().changes_from(&s.config());
                     self.send(Request::Apply(delta));
                 }
-                if ui.add_enabled(dirty, egui::Button::new(self.t(T::Revert))).clicked()
+                if ui
+                    .add_enabled(dirty, egui::Button::new(self.t(T::Revert)))
+                    .clicked()
                     && let Some(s) = &self.snap
                 {
                     self.edit = Some(Edit::from_snapshot(s));
                 }
-                if ui.add_enabled(!self.busy, egui::Button::new(format!("⟳ {}", self.t(T::Refresh)))).clicked() {
+                if ui
+                    .add_enabled(
+                        !self.busy,
+                        egui::Button::new(format!("⟳ {}", self.t(T::Refresh))),
+                    )
+                    .clicked()
+                {
                     self.send(Request::Refresh);
                 }
                 if dirty {
@@ -413,22 +483,40 @@ impl App {
             return;
         };
         card(ui, |ui| {
-            egui::Grid::new("info").num_columns(2).spacing([40.0, 10.0]).show(ui, |ui| {
-                let marker = s.info.mode.as_ref().map(|m| m.marker.clone()).unwrap_or_default();
-                row(ui, tr(lang, T::Model), &format!("{} ({marker})", model_name(&marker)));
-                row(
-                    ui,
-                    tr(lang, T::Firmware),
-                    &s.info.zkm_version.map(|v| format!("ZKM {}", v as char)).unwrap_or("—".into()),
-                );
-                row(ui, tr(lang, T::Uuid), s.info.uuid.as_deref().unwrap_or("—"));
-                row(
-                    ui,
-                    tr(lang, T::ProfileFormat),
-                    &s.profile.as_ref().map(|p| p.layout().name.to_string()).unwrap_or("—".into()),
-                );
-                row(ui, "USB", &format!("{:04x}:{:04x}", s.info.vid, s.info.pid));
-            });
+            egui::Grid::new("info")
+                .num_columns(2)
+                .spacing([40.0, 10.0])
+                .show(ui, |ui| {
+                    let marker = s
+                        .info
+                        .mode
+                        .as_ref()
+                        .map(|m| m.marker.clone())
+                        .unwrap_or_default();
+                    row(
+                        ui,
+                        tr(lang, T::Model),
+                        &format!("{} ({marker})", model_name(&marker)),
+                    );
+                    row(
+                        ui,
+                        tr(lang, T::Firmware),
+                        &s.info
+                            .zkm_version
+                            .map(|v| format!("ZKM {}", v as char))
+                            .unwrap_or("—".into()),
+                    );
+                    row(ui, tr(lang, T::Uuid), s.info.uuid.as_deref().unwrap_or("—"));
+                    row(
+                        ui,
+                        tr(lang, T::ProfileFormat),
+                        &s.profile
+                            .as_ref()
+                            .map(|p| p.layout().name.to_string())
+                            .unwrap_or("—".into()),
+                    );
+                    row(ui, "USB", &format!("{:04x}:{:04x}", s.info.vid, s.info.pid));
+                });
         });
         ui.add_space(10.0);
         let Some(edit) = &mut self.edit else { return };
@@ -451,12 +539,20 @@ impl App {
         ui.add_space(10.0);
         card(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add_enabled(self.worker.is_some(), egui::Button::new(tr(lang, T::Backup))).clicked() {
+                if ui
+                    .add_enabled(
+                        self.worker.is_some(),
+                        egui::Button::new(tr(lang, T::Backup)),
+                    )
+                    .clicked()
+                {
                     let name = format!(
                         "bigbigctl-backup-{}.bin",
                         s.info.uuid.clone().unwrap_or_else(|| "controller".into())
                     );
-                    let path = dirs::document_dir().unwrap_or_else(config::config_dir).join(name);
+                    let path = dirs::document_dir()
+                        .unwrap_or_else(config::config_dir)
+                        .join(name);
                     self.send(Request::Backup(path));
                 }
             });
@@ -466,54 +562,90 @@ impl App {
     fn page_buttons(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         let model = self.marker();
+        let live = self.live_now.clone();
+        let mut selected = self.selected_slot;
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
         let slots = visible_slots(&model);
-        card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(tr(lang, T::TurboSpeed)).strong());
-                let cur = profile.turbo_speed();
-                for (i, hz) in TURBO_SPEEDS_HZ.iter().enumerate() {
-                    if ui.selectable_label(usize::from(cur) == i, format!("{hz} Hz")).clicked() {
-                        let _ = profile.set_turbo_speed(i as u8);
+        let remapped = slots
+            .iter()
+            .filter(|&&i| profile.key(i) != KeyMap::Default)
+            .fold(0u32, |m, &i| m | (1 << i));
+        let marks = Marks {
+            turbo: profile.turbo_mask(),
+            remapped,
+        };
+        let editor_w = 300.0;
+        let pad_w = (ui.available_width() - editor_w - 12.0).max(320.0);
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_max_width(pad_w);
+                card(ui, |ui| {
+                    if let Some(slot) = pad::pad(ui, Some(selected), &marks, &live) {
+                        selected = slot;
                     }
-                }
+                    ui.label(dim(tr(lang, T::PadHint)));
+                })
             });
-        });
-        ui.add_space(10.0);
-        card(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("keys").num_columns(4).striped(true).spacing([18.0, 8.0]).show(ui, |ui| {
-                    ui.label(dim(tr(lang, T::Button)));
+            ui.vertical(|ui| {
+                ui.set_max_width(editor_w);
+                card(ui, |ui| {
+                    let name = SLOT_NAMES[selected].unwrap_or("?");
+                    ui.label(RichText::new(name).size(24.0).strong());
+                    ui.add_space(6.0);
                     ui.label(dim(tr(lang, T::Action)));
-                    ui.label("");
-                    ui.label(dim(tr(lang, T::Turbo)));
-                    ui.end_row();
-                    for &slot in &slots {
-                        let name = SLOT_NAMES[slot].unwrap_or("?");
-                        ui.label(RichText::new(name).strong().monospace());
-                        let mut map = profile.key(slot);
-                        let changed = keymap_editor(ui, lang, slot, &mut map, &slots);
-                        if changed {
-                            let _ = profile.set_key(slot, map);
-                        }
-                        let mut mask = profile.turbo_mask();
-                        let mut on = mask & (1 << slot) != 0;
-                        if ui.checkbox(&mut on, "").changed() {
-                            mask = if on { mask | (1 << slot) } else { mask & !(1 << slot) };
-                            profile.set_turbo_mask(mask);
-                        }
-                        ui.end_row();
+                    let mut map = profile.key(selected);
+                    if keymap_editor(ui, lang, selected, &mut map, &slots) {
+                        let _ = profile.set_key(selected, map);
                     }
-                });
+                    ui.add_space(12.0);
+                    ui.separator();
+                    let mut mask = profile.turbo_mask();
+                    let mut on = mask & (1 << selected) != 0;
+                    let label =
+                        format!("{}  {}", tr(lang, T::Turbo), if on { "ON" } else { "OFF" });
+                    let btn =
+                        egui::Button::new(RichText::new(label).strong().color(Color32::WHITE))
+                            .fill(if on {
+                                WARN.gamma_multiply(0.8)
+                            } else {
+                                Color32::from_gray(55)
+                            })
+                            .min_size(Vec2::new(ui.available_width(), 36.0));
+                    if ui.add(btn).clicked() {
+                        on = !on;
+                        mask = if on {
+                            mask | (1 << selected)
+                        } else {
+                            mask & !(1 << selected)
+                        };
+                        profile.set_turbo_mask(mask);
+                    }
+                    ui.add_space(8.0);
+                    ui.label(dim(tr(lang, T::TurboSpeed)));
+                    ui.horizontal(|ui| {
+                        let cur = profile.turbo_speed();
+                        for (i, hz) in TURBO_SPEEDS_HZ.iter().enumerate() {
+                            if ui
+                                .selectable_label(usize::from(cur) == i, format!("{hz} Hz"))
+                                .clicked()
+                            {
+                                let _ = profile.set_turbo_speed(i as u8);
+                            }
+                        }
+                    });
+                    ui.label(dim(tr(lang, T::TurboHint)));
+                })
             });
         });
+        self.selected_slot = selected;
     }
 
     fn page_sticks(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         let (mut right, mut set) = (self.stick_right, self.curve_set);
+        let live = self.live_now.clone();
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
@@ -534,7 +666,9 @@ impl App {
         ui.add_space(8.0);
         ui.columns(2, |cols| {
             card(&mut cols[0], |ui| {
-                curve_plot(ui, &c);
+                let pos = if right { live.right } else { live.left };
+                let mag = live.connected.then(|| pos.0.hypot(pos.1).min(1.0));
+                curve_plot(ui, &c, mag);
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(dim(tr(lang, T::Presets)));
@@ -553,20 +687,36 @@ impl App {
             });
             card(&mut cols[1], |ui| {
                 ui.spacing_mut().slider_width = (ui.available_width() - 190.0).max(80.0);
-                egui::Grid::new("curve").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
-                    let s = |ui: &mut egui::Ui, label: String, v: &mut u8| {
-                        ui.label(RichText::new(label).color(TEXT_DIM));
-                        ui.add(egui::Slider::new(v, 0..=100).suffix("%"));
-                        ui.end_row();
-                    };
-                    s(ui, tr(lang, T::Deadzone).into(), &mut c.deadzone);
-                    s(ui, tr(lang, T::AntiDeadzone).into(), &mut c.center_comp);
-                    s(ui, tr(lang, T::OuterLimit).into(), &mut c.outer);
-                    s(ui, tr(lang, T::MaxOutput).into(), &mut c.max_out);
-                    s(ui, format!("{} · X", tr(lang, T::PointA)), &mut c.point_a.0);
-                    s(ui, format!("{} · Y", tr(lang, T::PointA)), &mut c.point_a.1);
-                    s(ui, format!("{} · X", tr(lang, T::PointB)), &mut c.point_b.0);
-                    s(ui, format!("{} · Y", tr(lang, T::PointB)), &mut c.point_b.1);
+                egui::Grid::new("curve")
+                    .num_columns(2)
+                    .spacing([12.0, 10.0])
+                    .show(ui, |ui| {
+                        let s = |ui: &mut egui::Ui, label: String, v: &mut u8| {
+                            ui.label(RichText::new(label).color(TEXT_DIM));
+                            ui.add(egui::Slider::new(v, 0..=100).suffix("%"));
+                            ui.end_row();
+                        };
+                        s(ui, tr(lang, T::Deadzone).into(), &mut c.deadzone);
+                        s(ui, tr(lang, T::AntiDeadzone).into(), &mut c.center_comp);
+                        s(ui, tr(lang, T::OuterLimit).into(), &mut c.outer);
+                        s(ui, tr(lang, T::MaxOutput).into(), &mut c.max_out);
+                        s(ui, format!("{} · X", tr(lang, T::PointA)), &mut c.point_a.0);
+                        s(ui, format!("{} · Y", tr(lang, T::PointA)), &mut c.point_a.1);
+                        s(ui, format!("{} · X", tr(lang, T::PointB)), &mut c.point_b.0);
+                        s(ui, format!("{} · Y", tr(lang, T::PointB)), &mut c.point_b.1);
+                    });
+                ui.separator();
+                ui.horizontal(|ui| {
+                    let pos = if right { live.right } else { live.left };
+                    pad::stick_view(ui, pos, c.deadzone, c.outer, live.connected);
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(tr(lang, T::LiveInput)).strong());
+                        if live.connected {
+                            ui.label(dim(format!("X {:+.2}  Y {:+.2}", pos.0, pos.1)));
+                        } else {
+                            ui.label(dim(tr(lang, T::LiveUnavailable)));
+                        }
+                    });
                 });
             });
         });
@@ -583,26 +733,34 @@ impl App {
 
     fn page_triggers(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
+        let live = self.live_now.clone();
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
         ui.columns(2, |cols| {
-            for (i, (right, title)) in [(false, T::LeftTrigger), (true, T::RightTrigger)].into_iter().enumerate() {
+            for (i, (right, title)) in [(false, T::LeftTrigger), (true, T::RightTrigger)]
+                .into_iter()
+                .enumerate()
+            {
                 let ui = &mut cols[i];
                 card(ui, |ui| {
                     ui.label(RichText::new(tr(lang, title)).strong());
                     let mut t: Trigger = profile.trigger(right);
                     let before = t;
-                    trigger_bar(ui, &t);
+                    let value = if right { live.rt } else { live.lt };
+                    trigger_bar(ui, &t, live.connected.then_some(value));
                     ui.spacing_mut().slider_width = (ui.available_width() - 190.0).max(80.0);
-                    egui::Grid::new(("trig", right)).num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
-                        ui.label(RichText::new(tr(lang, T::TriggerStart)).color(TEXT_DIM));
-                        ui.add(egui::Slider::new(&mut t.start, 0..=99).suffix("%"));
-                        ui.end_row();
-                        ui.label(RichText::new(tr(lang, T::TriggerEnd)).color(TEXT_DIM));
-                        ui.add(egui::Slider::new(&mut t.end, 1..=100).suffix("%"));
-                        ui.end_row();
-                    });
+                    egui::Grid::new(("trig", right))
+                        .num_columns(2)
+                        .spacing([12.0, 10.0])
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(tr(lang, T::TriggerStart)).color(TEXT_DIM));
+                            ui.add(egui::Slider::new(&mut t.start, 0..=99).suffix("%"));
+                            ui.end_row();
+                            ui.label(RichText::new(tr(lang, T::TriggerEnd)).color(TEXT_DIM));
+                            ui.add(egui::Slider::new(&mut t.end, 1..=100).suffix("%"));
+                            ui.end_row();
+                        });
                     ui.checkbox(&mut t.hair, tr(lang, T::HairTrigger));
                     if t != before {
                         t.end = t.end.max(t.start + 1);
@@ -615,12 +773,17 @@ impl App {
 
     fn page_lights(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
-        let Some(edit) = &mut self.edit else { return no_profile(ui, lang) };
+        let Some(edit) = &mut self.edit else {
+            return no_profile(ui, lang);
+        };
         card(ui, |ui| {
             ui.label(RichText::new(tr(lang, T::Brightness)).strong());
             if let Some(b) = &mut edit.led_brightness {
                 let mut pct = (u32::from(*b) * 100 / 255) as u8;
-                if ui.add(egui::Slider::new(&mut pct, 0..=100).suffix("%")).changed() {
+                if ui
+                    .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
+                    .changed()
+                {
                     *b = (u32::from(pct) * 255 / 100) as u8;
                 }
             } else {
@@ -633,7 +796,10 @@ impl App {
             ui.label(dim(tr(lang, T::NotVerified)));
             if let Some(colors) = &mut edit.logo_colors {
                 ui.horizontal(|ui| {
-                    for (i, t) in [T::ModeXbox, T::ModeSwitch, T::ModePs].into_iter().enumerate() {
+                    for (i, t) in [T::ModeXbox, T::ModeSwitch, T::ModePs]
+                        .into_iter()
+                        .enumerate()
+                    {
                         ui.vertical(|ui| {
                             ui.label(tr(lang, t));
                             ui.color_edit_button_srgb(&mut colors[i]);
@@ -647,13 +813,17 @@ impl App {
 
     fn page_macros(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
-        let Some(s) = &self.snap else { return no_profile(ui, lang) };
+        let Some(s) = &self.snap else {
+            return no_profile(ui, lang);
+        };
         card(ui, |ui| {
             ui.label(dim(tr(lang, T::NotVerified)));
             for (i, m) in s.macros.iter().enumerate() {
                 let steps = m.len.saturating_sub(10) / 10;
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{} {}", tr(lang, T::MacroSlot), i + 1)).strong());
+                    ui.label(
+                        RichText::new(format!("{} {}", tr(lang, T::MacroSlot), i + 1)).strong(),
+                    );
                     if steps == 0 {
                         ui.label(dim(tr(lang, T::MacroEmpty)));
                     } else {
@@ -668,9 +838,14 @@ impl App {
         let lang = self.lang();
         card(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.new_profile_name).hint_text(tr(lang, T::ProfileName)));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_profile_name)
+                        .hint_text(tr(lang, T::ProfileName)),
+                );
                 let ok = !self.new_profile_name.trim().is_empty() && self.edit.is_some();
-                if ui.add_enabled(ok, egui::Button::new(tr(lang, T::SaveAsProfile))).clicked()
+                if ui
+                    .add_enabled(ok, egui::Button::new(tr(lang, T::SaveAsProfile)))
+                    .clicked()
                     && let Some(e) = &self.edit
                 {
                     let p = NamedProfile {
@@ -731,7 +906,10 @@ impl App {
                 }
             });
             ui.checkbox(&mut self.settings.autostart, tr(lang, T::Autostart));
-            ui.checkbox(&mut self.settings.close_to_tray, tr(lang, T::MinimizeToTray));
+            ui.checkbox(
+                &mut self.settings.close_to_tray,
+                tr(lang, T::MinimizeToTray),
+            );
             ui.checkbox(&mut self.settings.start_hidden, tr(lang, T::StartHidden));
         });
         ui.add_space(10.0);
@@ -741,6 +919,22 @@ impl App {
         });
         if self.settings != before && self.shots.is_none() {
             let _ = self.settings.save();
+        }
+    }
+
+    /// "USB · 1000 Hz" / "Dongle · 1000 Hz".
+    fn connection_label(&self) -> String {
+        let Some(s) = &self.snap else {
+            return self.t(T::Connected).to_string();
+        };
+        let link = match s.connection {
+            Some(crate::actions::Link::Usb) => self.t(T::Wired),
+            Some(crate::actions::Link::Dongle) => self.t(T::Wireless),
+            None => self.t(T::Connected),
+        };
+        match s.info.polling_code.and_then(polling_hz) {
+            Some(hz) => format!("{link} · {hz} Hz"),
+            None => link.to_string(),
         }
     }
 
@@ -772,15 +966,21 @@ impl App {
         }
         run.frames = 0;
         run.index += 1;
-        let path = run.dir.join(format!("{}-{}.png", tab.slug(), if lang == Lang::It { "it" } else { "en" }));
+        let path = run.dir.join(format!(
+            "{}-{}.png",
+            tab.slug(),
+            if lang == Lang::It { "it" } else { "en" }
+        ));
         let pending = run.pending.clone();
         pending.store(true, Ordering::SeqCst);
         let repaint = ctx.clone();
-        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img| {
-            let _ = save_png(&path, &img);
-            pending.store(false, Ordering::SeqCst);
-            repaint.request_repaint();
-        })));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
+            egui::ScreenshotCallback::new(move |img| {
+                let _ = save_png(&path, &img);
+                pending.store(false, Ordering::SeqCst);
+                repaint.request_repaint();
+            }),
+        ));
         ctx.request_repaint();
     }
 }
@@ -788,6 +988,11 @@ impl App {
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_worker();
+        if let Some(l) = &self.live
+            && let Ok(st) = l.lock()
+        {
+            self.live_now = st.clone();
+        }
         self.drive_screenshots(ctx);
         if matches!(self.status, Status::Info(..)) {
             ctx.request_repaint_after(Duration::from_secs(1));
@@ -798,20 +1003,26 @@ impl eframe::App for App {
         egui::Panel::left("nav")
             .resizable(false)
             .exact_size(210.0)
-            .frame(egui::Frame::new().fill(theme::BG).inner_margin(egui::Margin::same(10)))
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BG)
+                    .inner_margin(egui::Margin::same(10)),
+            )
             .show(ui, |ui| self.sidebar(ui));
         egui::CentralPanel::default_margins().show(ui, |ui| {
             self.top_bar(ui);
-            egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| match self.tab {
-                Tab::Device => self.page_device(ui),
-                Tab::Buttons => self.page_buttons(ui),
-                Tab::Sticks => self.page_sticks(ui),
-                Tab::Triggers => self.page_triggers(ui),
-                Tab::Lights => self.page_lights(ui),
-                Tab::Macros => self.page_macros(ui),
-                Tab::Profiles => self.page_profiles(ui),
-                Tab::Settings => self.page_settings(ui),
-            });
+            egui::ScrollArea::vertical()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| match self.tab {
+                    Tab::Device => self.page_device(ui),
+                    Tab::Buttons => self.page_buttons(ui),
+                    Tab::Sticks => self.page_sticks(ui),
+                    Tab::Triggers => self.page_triggers(ui),
+                    Tab::Lights => self.page_lights(ui),
+                    Tab::Macros => self.page_macros(ui),
+                    Tab::Profiles => self.page_profiles(ui),
+                    Tab::Settings => self.page_settings(ui),
+                });
         });
     }
 }
@@ -850,7 +1061,13 @@ fn no_profile(ui: &mut egui::Ui, lang: Lang) {
     });
 }
 
-fn keymap_editor(ui: &mut egui::Ui, lang: Lang, slot: usize, map: &mut KeyMap, slots: &[usize]) -> bool {
+fn keymap_editor(
+    ui: &mut egui::Ui,
+    lang: Lang,
+    slot: usize,
+    map: &mut KeyMap,
+    slots: &[usize],
+) -> bool {
     let before = *map;
     let kind = match map {
         KeyMap::Default => T::MapDefault,
@@ -859,30 +1076,57 @@ fn keymap_editor(ui: &mut egui::Ui, lang: Lang, slot: usize, map: &mut KeyMap, s
         KeyMap::Keyboard { .. } => T::MapKeyboard,
         KeyMap::Raw { .. } => T::MapRaw,
     };
-    egui::ComboBox::from_id_salt(("kind", slot)).selected_text(tr(lang, kind)).width(170.0).show_ui(ui, |ui| {
-        if ui.selectable_label(kind == T::MapDefault, tr(lang, T::MapDefault)).clicked() {
-            *map = KeyMap::Default;
-        }
-        if ui.selectable_label(kind == T::MapDisabled, tr(lang, T::MapDisabled)).clicked() {
-            *map = KeyMap::Disabled;
-        }
-        if ui.selectable_label(kind == T::MapButton, tr(lang, T::MapButton)).clicked() {
-            *map = KeyMap::Button { target: slot as u8 };
-        }
-        if ui.selectable_label(kind == T::MapKeyboard, tr(lang, T::MapKeyboard)).clicked() {
-            *map = KeyMap::Keyboard { modifiers: 0, key1: 0x2c, key2: 0 };
-        }
-    });
+    egui::ComboBox::from_id_salt(("kind", slot))
+        .selected_text(tr(lang, kind))
+        .width(170.0)
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(kind == T::MapDefault, tr(lang, T::MapDefault))
+                .clicked()
+            {
+                *map = KeyMap::Default;
+            }
+            if ui
+                .selectable_label(kind == T::MapDisabled, tr(lang, T::MapDisabled))
+                .clicked()
+            {
+                *map = KeyMap::Disabled;
+            }
+            if ui
+                .selectable_label(kind == T::MapButton, tr(lang, T::MapButton))
+                .clicked()
+            {
+                *map = KeyMap::Button { target: slot as u8 };
+            }
+            if ui
+                .selectable_label(kind == T::MapKeyboard, tr(lang, T::MapKeyboard))
+                .clicked()
+            {
+                *map = KeyMap::Keyboard {
+                    modifiers: 0,
+                    key1: 0x2c,
+                    key2: 0,
+                };
+            }
+        });
     ui.horizontal(|ui| match map {
         KeyMap::Button { target } => {
-            let name = SLOT_NAMES.get(usize::from(*target)).copied().flatten().unwrap_or("?");
-            egui::ComboBox::from_id_salt(("target", slot)).selected_text(name).show_ui(ui, |ui| {
-                for &s in slots {
-                    ui.selectable_value(target, s as u8, SLOT_NAMES[s].unwrap_or("?"));
-                }
-            });
+            let name = SLOT_NAMES
+                .get(usize::from(*target))
+                .copied()
+                .flatten()
+                .unwrap_or("?");
+            egui::ComboBox::from_id_salt(("target", slot))
+                .selected_text(name)
+                .show_ui(ui, |ui| {
+                    for &s in slots {
+                        ui.selectable_value(target, s as u8, SLOT_NAMES[s].unwrap_or("?"));
+                    }
+                });
         }
-        KeyMap::Keyboard { modifiers, key1, .. } => {
+        KeyMap::Keyboard {
+            modifiers, key1, ..
+        } => {
             egui::ComboBox::from_id_salt(("mod", slot))
                 .selected_text(keys::modifier_name(*modifiers).unwrap_or("?"))
                 .show_ui(ui, |ui| {
@@ -909,7 +1153,7 @@ fn keymap_editor(ui: &mut egui::Ui, lang: Lang, slot: usize, map: &mut KeyMap, s
 }
 
 /// Draws the stick response curve.
-fn curve_plot(ui: &mut egui::Ui, c: &Curve) {
+fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>) {
     let size = Vec2::splat(ui.available_width().min(320.0));
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::hover());
     let r = resp.rect;
@@ -917,10 +1161,23 @@ fn curve_plot(ui: &mut egui::Ui, c: &Curve) {
     let grid = Stroke::new(1.0, Color32::from_gray(45));
     for i in 1..4 {
         let f = i as f32 / 4.0;
-        painter.line_segment([r.lerp_inside(Vec2::new(f, 0.0)), r.lerp_inside(Vec2::new(f, 1.0))], grid);
-        painter.line_segment([r.lerp_inside(Vec2::new(0.0, f)), r.lerp_inside(Vec2::new(1.0, f))], grid);
+        painter.line_segment(
+            [
+                r.lerp_inside(Vec2::new(f, 0.0)),
+                r.lerp_inside(Vec2::new(f, 1.0)),
+            ],
+            grid,
+        );
+        painter.line_segment(
+            [
+                r.lerp_inside(Vec2::new(0.0, f)),
+                r.lerp_inside(Vec2::new(1.0, f)),
+            ],
+            grid,
+        );
     }
-    let p = |x: u8, y: u8| r.lerp_inside(Vec2::new(f32::from(x) / 100.0, 1.0 - f32::from(y) / 100.0));
+    let p =
+        |x: u8, y: u8| r.lerp_inside(Vec2::new(f32::from(x) / 100.0, 1.0 - f32::from(y) / 100.0));
     let pts = vec![
         p(0, 0),
         p(c.deadzone, 0),
@@ -930,25 +1187,57 @@ fn curve_plot(ui: &mut egui::Ui, c: &Curve) {
         p(c.outer, c.max_out),
         p(100, c.max_out),
     ];
-    painter.line_segment([p(0, 0), p(100, 100)], Stroke::new(1.0, Color32::from_gray(70)));
+    painter.line_segment(
+        [p(0, 0), p(100, 100)],
+        Stroke::new(1.0, Color32::from_gray(70)),
+    );
     painter.line(pts, Stroke::new(3.0, ACCENT));
     for (x, y) in [c.point_a, c.point_b] {
         painter.circle_filled(p(x, y), 6.0, Color32::WHITE);
     }
+    if let Some(m) = live {
+        let x = r.left() + r.width() * m;
+        painter.line_segment(
+            [egui::pos2(x, r.top()), egui::pos2(x, r.bottom())],
+            Stroke::new(1.5, OK),
+        );
+    }
 }
 
-fn trigger_bar(ui: &mut egui::Ui, t: &Trigger) {
-    let (resp, painter) = ui.allocate_painter(Vec2::new(ui.available_width(), 22.0), egui::Sense::hover());
+fn trigger_bar(ui: &mut egui::Ui, t: &Trigger, live: Option<f32>) {
+    let (resp, painter) =
+        ui.allocate_painter(Vec2::new(ui.available_width(), 22.0), egui::Sense::hover());
     let r = resp.rect;
     painter.rect_filled(r, 6.0, theme::BG);
     let x = |v: u8| r.left() + r.width() * f32::from(v) / 100.0;
     let active = egui::Rect::from_x_y_ranges(x(t.start)..=x(t.end), r.y_range());
     painter.rect_filled(active, 6.0, ACCENT);
+    if let Some(v) = live {
+        let lx = r.left() + r.width() * v.clamp(0.0, 1.0);
+        painter.line_segment(
+            [
+                egui::pos2(lx, r.top() - 3.0),
+                egui::pos2(lx, r.bottom() + 3.0),
+            ],
+            Stroke::new(3.0, OK),
+        );
+        painter.text(
+            r.right_center() + egui::vec2(-6.0, 0.0),
+            egui::Align2::RIGHT_CENTER,
+            format!("{:.0}%", v * 100.0),
+            egui::FontId::monospace(12.0),
+            Color32::WHITE,
+        );
+    }
 }
 
 fn save_png(path: &std::path::Path, img: &egui::ColorImage) -> std::io::Result<()> {
     let file = std::fs::File::create(path)?;
-    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), img.size[0] as u32, img.size[1] as u32);
+    let mut enc = png::Encoder::new(
+        std::io::BufWriter::new(file),
+        img.size[0] as u32,
+        img.size[1] as u32,
+    );
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     let mut w = enc.write_header().map_err(std::io::Error::other)?;

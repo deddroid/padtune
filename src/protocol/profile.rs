@@ -12,9 +12,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::commands::op;
 use super::crc;
 use super::frame::{self, REPORT_LEN};
-use super::commands::op;
 use crate::{Error, Result};
 
 /// Byte layout of one profile generation.
@@ -121,7 +121,11 @@ impl KeyMap {
             [0, 0, 0, 0] => KeyMap::Default,
             [1, 0xff, ..] => KeyMap::Disabled,
             [1, t, 0, 0] if usize::from(t) < KEY_SLOTS => KeyMap::Button { target: t },
-            [2, m, k1, k2] if k1 != 0 => KeyMap::Keyboard { modifiers: m, key1: k1, key2: k2 },
+            [2, m, k1, k2] if k1 != 0 => KeyMap::Keyboard {
+                modifiers: m,
+                key1: k1,
+                key2: k2,
+            },
             bytes => KeyMap::Raw { bytes },
         }
     }
@@ -131,7 +135,11 @@ impl KeyMap {
             KeyMap::Default => [0; 4],
             KeyMap::Disabled => [1, 0xff, 0, 0],
             KeyMap::Button { target } => [1, target, 0, 0],
-            KeyMap::Keyboard { modifiers, key1, key2 } => [2, modifiers, key1, key2],
+            KeyMap::Keyboard {
+                modifiers,
+                key1,
+                key2,
+            } => [2, modifiers, key1, key2],
             KeyMap::Raw { bytes } => bytes,
         }
     }
@@ -164,13 +172,18 @@ impl Profile {
             .iter()
             .copied()
             .find(|l| l.len == declared)
-            .ok_or_else(|| Error::Protocol(format!("unsupported profile layout ({declared} bytes)")))?;
+            .ok_or_else(|| {
+                Error::Protocol(format!("unsupported profile layout ({declared} bytes)"))
+            })?;
         let stored = crc::stored_crc(bytes).unwrap_or_default();
         let computed = crc::blob_crc(bytes);
         if stored != computed {
             return Err(Error::Crc { stored, computed });
         }
-        Ok(Self { raw: bytes.to_vec(), layout })
+        Ok(Self {
+            raw: bytes.to_vec(),
+            layout,
+        })
     }
 
     pub fn layout(&self) -> &'static Layout {
@@ -241,10 +254,7 @@ impl Profile {
             point_b: (r[o + 6], r[o + 7]),
             outer: r[o + 8],
             max_out: r[o + 9],
-            stabilization: self
-                .layout
-                .curve_has_stabilization
-                .then(|| r[o + 10] as i8),
+            stabilization: self.layout.curve_has_stabilization.then(|| r[o + 10] as i8),
         }
     }
 
@@ -263,10 +273,14 @@ impl Profile {
             return Err(Error::Invalid("curve values must be 0..=100".into()));
         }
         if c.point_a.0 > c.point_b.0 || c.point_a.1 > c.point_b.1 {
-            return Err(Error::Invalid("curve point A must not exceed point B".into()));
+            return Err(Error::Invalid(
+                "curve point A must not exceed point B".into(),
+            ));
         }
         if c.deadzone >= c.outer {
-            return Err(Error::Invalid("centre dead zone must be below the outer limit".into()));
+            return Err(Error::Invalid(
+                "centre dead zone must be below the outer limit".into(),
+            ));
         }
         let o = self.curve_offset(index);
         self.raw[o] = 0x01;
@@ -308,7 +322,9 @@ impl Profile {
 
     pub fn set_turbo_speed(&mut self, index: u8) -> Result<()> {
         if usize::from(index) >= TURBO_SPEEDS_HZ.len() {
-            return Err(Error::Invalid(format!("turbo speed index {index} out of range")));
+            return Err(Error::Invalid(format!(
+                "turbo speed index {index} out of range"
+            )));
         }
         self.raw[self.layout.turbo_speed] = index;
         Ok(())
@@ -392,16 +408,15 @@ pub const SLOT_NAMES: [Option<&str>; KEY_SLOTS] = [
 pub const RAINBOW2PRO_FACTORY: [u8; 280] = {
     let mut p = [0u8; 280];
     let head: &[u8] = &[
-        0x87, 0x8d, 0x01, 0x18, 0x00, 0x05, 0x0a, 0x05, 0x0a, 0x00, 0x00, 0x00, 0x66, 0x00,
-        0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00,
-        0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46,
-        0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01, 0x20,
-        0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e,
-        0x46, 0x46, 0x5f, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x00,
-        0x00, 0x00, 0x00, 0x0a, 0x3c, 0x3c, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x3c, 0x3c,
-        0x2a, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x3c, 0x3c, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x50,
-        0x50, 0x50, 0xff, 0xff, 0xff, 0xff, 0x33,
+        0x87, 0x8d, 0x01, 0x18, 0x00, 0x05, 0x0a, 0x05, 0x0a, 0x00, 0x00, 0x00, 0x66, 0x00, 0x01,
+        0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e,
+        0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01,
+        0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e,
+        0x46, 0x46, 0x5f, 0x64, 0x01, 0x20, 0x0c, 0x00, 0x1e, 0x1e, 0x46, 0x46, 0x5f, 0x64, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x3c, 0x3c,
+        0x2a, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x3c, 0x3c, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x3c,
+        0x3c, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x50, 0x50, 0x50, 0x50, 0xff, 0xff, 0xff, 0xff, 0x33,
     ];
     let mut i = 0;
     while i < head.len() {
@@ -411,7 +426,6 @@ pub const RAINBOW2PRO_FACTORY: [u8; 280] = {
     p
 };
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,8 +434,22 @@ mod tests {
     fn parses_rainbow2pro_factory_profile() {
         let p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
         assert_eq!(p.layout().name, "280_v36");
-        assert_eq!(p.trigger(false), Trigger { start: 5, end: 90, hair: false });
-        assert_eq!(p.trigger(true), Trigger { start: 5, end: 90, hair: false });
+        assert_eq!(
+            p.trigger(false),
+            Trigger {
+                start: 5,
+                end: 90,
+                hair: false
+            }
+        );
+        assert_eq!(
+            p.trigger(true),
+            Trigger {
+                start: 5,
+                end: 90,
+                hair: false
+            }
+        );
         let c = p.curve(0);
         assert_eq!(c.deadzone, 12);
         assert_eq!(c.point_a, (30, 30));
@@ -445,7 +473,15 @@ mod tests {
     #[test]
     fn edits_are_sealed_and_framed() {
         let mut p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
-        p.set_trigger(false, Trigger { start: 2, end: 98, hair: true }).unwrap();
+        p.set_trigger(
+            false,
+            Trigger {
+                start: 2,
+                end: 98,
+                hair: true,
+            },
+        )
+        .unwrap();
         p.set_key(0, KeyMap::Button { target: 1 }).unwrap();
         p.set_turbo_mask(1 << 3);
         let bytes = p.to_bytes();
@@ -453,7 +489,12 @@ mod tests {
         assert_eq!(bytes[0x98..0x9c], [1, 1, 0, 0]);
         assert_eq!(bytes[0x74..0x78], [0, 0, 0, 8]);
         let reparsed = Profile::from_bytes(&bytes).unwrap();
-        assert_eq!(reparsed.diff(&Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap()).len(), 6);
+        assert_eq!(
+            reparsed
+                .diff(&Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap())
+                .len(),
+            6
+        );
         let frames = p.write_frames();
         assert_eq!(frames.len(), 5);
         assert_eq!(frames[0][..4], [0xa4, 0x40, 0xd7, 0x01]);
@@ -461,7 +502,13 @@ mod tests {
 
     #[test]
     fn keymap_roundtrip() {
-        for b in [[0, 0, 0, 0], [1, 0xff, 0, 0], [1, 3, 0, 0], [2, 0x02, 0x04, 0], [9, 9, 9, 9]] {
+        for b in [
+            [0, 0, 0, 0],
+            [1, 0xff, 0, 0],
+            [1, 3, 0, 0],
+            [2, 0x02, 0x04, 0],
+            [9, 9, 9, 9],
+        ] {
             assert_eq!(KeyMap::decode(b).encode(), b);
         }
     }
@@ -469,7 +516,17 @@ mod tests {
     #[test]
     fn invalid_values_are_refused() {
         let mut p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
-        assert!(p.set_trigger(true, Trigger { start: 50, end: 40, hair: false }).is_err());
+        assert!(
+            p.set_trigger(
+                true,
+                Trigger {
+                    start: 50,
+                    end: 40,
+                    hair: false
+                }
+            )
+            .is_err()
+        );
         let mut c = p.curve(1);
         c.point_a = (80, 80);
         assert!(p.set_curve(1, c).is_err());

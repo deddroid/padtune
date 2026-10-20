@@ -8,6 +8,8 @@
 //!   in every language to `<dir>`, then exits.
 
 mod app;
+pub mod live;
+mod pad;
 mod theme;
 pub mod worker;
 
@@ -25,7 +27,11 @@ fn icon() -> Option<egui::IconData> {
         return None;
     }
     buf.truncate(info.buffer_size());
-    Some(egui::IconData { rgba: buf, width: info.width, height: info.height })
+    Some(egui::IconData {
+        rgba: buf,
+        width: info.width,
+        height: info.height,
+    })
 }
 
 use eframe::egui;
@@ -40,6 +46,13 @@ pub fn run() -> eframe::Result {
     if let Some(icon) = icon() {
         viewport = viewport.with_icon(icon);
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
-    eframe::run_native("bigbigctl", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
+    eframe::run_native(
+        "bigbigctl",
+        options,
+        Box::new(|cc| Ok(Box::new(App::new(cc)))),
+    )
 }

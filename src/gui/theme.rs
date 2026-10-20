@@ -45,10 +45,14 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.slider_width = 220.0;
         s.spacing.interact_size.y = 26.0;
         use egui::{FontId, TextStyle};
-        s.text_styles.insert(TextStyle::Heading, FontId::proportional(22.0));
-        s.text_styles.insert(TextStyle::Body, FontId::proportional(14.5));
-        s.text_styles.insert(TextStyle::Button, FontId::proportional(14.5));
-        s.text_styles.insert(TextStyle::Small, FontId::proportional(12.0));
+        s.text_styles
+            .insert(TextStyle::Heading, FontId::proportional(22.0));
+        s.text_styles
+            .insert(TextStyle::Body, FontId::proportional(14.5));
+        s.text_styles
+            .insert(TextStyle::Button, FontId::proportional(14.5));
+        s.text_styles
+            .insert(TextStyle::Small, FontId::proportional(12.0));
     });
     install_fallback_fonts(ctx);
 }
@@ -71,8 +75,14 @@ fn install_fallback_fonts(ctx: &egui::Context) {
                 "symbols-fallback",
                 FontData::from_owned(bytes),
                 vec![
-                    InsertFontFamily { family: FontFamily::Proportional, priority: FontPriority::Lowest },
-                    InsertFontFamily { family: FontFamily::Monospace, priority: FontPriority::Lowest },
+                    InsertFontFamily {
+                        family: FontFamily::Proportional,
+                        priority: FontPriority::Lowest,
+                    },
+                    InsertFontFamily {
+                        family: FontFamily::Monospace,
+                        priority: FontPriority::Lowest,
+                    },
                 ],
             ));
             return;
