@@ -146,6 +146,10 @@ strings! {
     FollowsMode => "follows mode", "segue la modalità";
     LogoIntensity => "Intensity", "Intensità";
     Advanced => "Advanced", "Avanzate";
+    MyPresets => "My presets", "I miei preset";
+    PresetSlot => "Preset", "Preset";
+    SavePreset => "Save the current curve in this slot", "Salva la curva attuale in questo slot";
+    CopyToOtherStick => "Copy this curve to the other stick", "Copia questa curva sull'altro stick";
     AxisInput => "stick travel", "movimento stick";
     AxisOutput => "output to the game", "uscita al gioco";
     CurveExplain => "X: how far you push the stick. Y: how much the game receives. The grey diagonal is a 1:1 response: points above it make the stick more reactive, below it more precise. The flat start is the dead zone, the flat end the outer limit.", "X: quanto spingi lo stick. Y: quanto riceve il gioco. La diagonale grigia è la risposta 1:1: punti sopra la rendono più reattiva, sotto più precisa. Il tratto piatto iniziale è la zona morta, quello finale il limite esterno.";
@@ -157,8 +161,8 @@ strings! {
     LicenseLabel => "License", "Licenza";
     Unofficial => "Unofficial project, not affiliated with BIGBIG WON.", "Progetto non ufficiale, non affiliato a BIGBIG WON.";
     Vibration => "Vibration", "Vibrazione";
-    VibHint => "Each motor scales the game's rumble between a minimum and a maximum strength. Clicking a grip slider writes the vibration to the controller and plays it as a preview. FN + → on the controller cycles the trigger vibration level.", "Ogni motore scala la vibrazione del gioco tra una potenza minima e una massima. Cliccando un cursore di un'impugnatura la vibrazione viene scritta nel controller e riprodotta come anteprima. FN + → sul controller cambia il livello di vibrazione dei grilletti.";
-    VibNoTest => "No preview: trigger motors are not reachable from the PC, only games that support them use them.", "Nessuna anteprima: i motori dei grilletti non sono raggiungibili dal PC, li usano solo i giochi che li supportano.";
+    VibHint => "Each motor scales the game's rumble between a minimum and a maximum strength (the maximum must stay above the minimum). Clicking a slider writes the vibration to the controller and plays it as a preview. FN + → on the controller cycles the trigger vibration level.", "Ogni motore scala la vibrazione del gioco tra una potenza minima e una massima (la massima deve restare sopra la minima). Cliccando un cursore la vibrazione viene scritta nel controller e riprodotta come anteprima. FN + → sul controller cambia il livello di vibrazione dei grilletti.";
+    VibNoTest => "Games send rumble on the two grip channels; the controller drives the trigger motors from them (level: FN + →). The preview therefore also shakes the grips.", "I giochi inviano la vibrazione sui due canali delle impugnature; il controller ne ricava quella dei grilletti (livello: FN + →). Per questo l'anteprima fa vibrare anche le impugnature.";
     VibOff => "Off", "Spenta";
     VibWeak => "Weak", "Debole";
     VibStandard => "Standard", "Standard";
@@ -173,7 +177,7 @@ strings! {
     StripCustomTitle => "2 · Custom light", "2 · Luce personalizzata";
     FnCycle => "Double-click FN cycles three looks", "Il doppio clic su FN alterna tre aspetti";
     FnCycleHint => "Which one is active cannot be read from the controller.", "Quale sia attivo non si può leggere dal controller.";
-    FnSlot1 => "1 · Mode light — the colour of the console mode (green in XInput, red in Switch), like the HOME light.", "1 · Luce modalità — il colore della modalità console (verde in XInput, rosso in Switch), come la luce HOME.";
+    FnSlot1 => "1 · Standard light — the strip's built-in preset (green), not editable.", "1 · Luce standard — il preset integrato della striscia (verde), non modificabile.";
     FnSlot3 => "3 · Off.", "3 · Spenta.";
     StripResend => "Send lights again", "Invia di nuovo le luci";
     StripResendHint => "Sends brightness and custom effect even if PadTune thinks they are unchanged (e.g. after changing them on the controller).", "Invia luminosità ed effetto personalizzato anche se PadTune li considera invariati (per esempio dopo averli cambiati dal controller).";

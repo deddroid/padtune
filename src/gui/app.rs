@@ -758,24 +758,22 @@ impl App {
                     if on_dongle {
                         key_test = false;
                     }
-                    ui.horizontal(|ui| {
-                        if on_dongle {
-                            ui.label(dim(tr(lang, T::KeyTestCable)));
-                            return;
-                        }
+                    // Long hints go on their own wrapping line so they never
+                    // widen the card and push the editor out of view.
+                    if on_dongle {
+                        ui.add(egui::Label::new(dim(tr(lang, T::KeyTestCable))).wrap());
+                    } else {
                         ui.toggle_value(
                             &mut key_test,
                             RichText::new(format!("⚡ {}", tr(lang, T::KeyTest))).strong(),
                         );
-                        ui.label(dim(tr(
-                            lang,
-                            if key_test {
-                                T::KeyTestOn
-                            } else {
-                                T::KeyTestOff
-                            },
-                        )));
-                    });
+                        let hint = if key_test {
+                            T::KeyTestOn
+                        } else {
+                            T::KeyTestOff
+                        };
+                        ui.add(egui::Label::new(dim(tr(lang, hint))).wrap());
+                    }
                     if let Some(slot) = pad::pad(ui, Some(selected), &marks, &live) {
                         selected = slot;
                     }
@@ -882,6 +880,14 @@ impl App {
     fn page_sticks(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         let (mut right, mut set) = (self.stick_right, self.curve_set);
+        let user_presets: [Option<Curve>; 3] = std::array::from_fn(|i| {
+            self.settings
+                .curve_presets
+                .get(&(i + 1).to_string())
+                .copied()
+        });
+        let mut save_slot: Option<usize> = None;
+        let mut copy_to_other = false;
         let live = self.live_now.clone();
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
@@ -936,6 +942,34 @@ impl App {
                         }
                     }
                 });
+                ui.add_space(6.0);
+                // Three presets of the user's own, kept in the app settings.
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(dim(tr(lang, T::MyPresets)));
+                    for (i, slot) in user_presets.iter().enumerate() {
+                        let b = ui.add_enabled(
+                            slot.is_some(),
+                            egui::Button::new(format!("{} {}", tr(lang, T::PresetSlot), i + 1))
+                                .small(),
+                        );
+                        if b.clicked()
+                            && let Some(p) = slot
+                        {
+                            c = *p;
+                        }
+                        if ui
+                            .small_button("✎")
+                            .on_hover_text(tr(lang, T::SavePreset))
+                            .clicked()
+                        {
+                            save_slot = Some(i);
+                        }
+                    }
+                });
+                ui.add_space(6.0);
+                if ui.button(tr(lang, T::CopyToOtherStick)).clicked() {
+                    copy_to_other = true;
+                }
             });
             card(&mut cols[1], |ui| {
                 ui.spacing_mut().slider_width = (ui.available_width() - 190.0).max(80.0);
@@ -976,9 +1010,23 @@ impl App {
             // Keep the curve valid while dragging instead of refusing the edit.
             c.point_b.0 = c.point_b.0.max(c.point_a.0);
             c.point_b.1 = c.point_b.1.max(c.point_a.1);
+            // The dead zone must stay below the outer limit.
+            c.deadzone = c.deadzone.min(99);
             c.outer = c.outer.max(c.deadzone + 1).min(100);
             if profile.set_curve(index, c).is_err() {
                 self.status = Status::Error("invalid curve".into());
+            }
+        }
+        if copy_to_other {
+            let other = set * 2 + usize::from(!right);
+            let _ = profile.set_curve(other, profile.curve(index));
+        }
+        if let Some(i) = save_slot {
+            self.settings
+                .curve_presets
+                .insert((i + 1).to_string(), profile.curve(index));
+            if self.shots.is_none() {
+                let _ = self.settings.save();
             }
         }
     }
@@ -1055,7 +1103,10 @@ impl App {
         // Motor index, name, and the OS rumble that reaches it (strong = left
         // grip, weak = right grip; trigger motors are not reachable).
         let rows = [
-            [(2usize, T::VibMotor3, None), (3, T::VibMotor4, None)],
+            [
+                (2usize, T::VibMotor3, Some((u16::MAX, u16::MAX))),
+                (3, T::VibMotor4, Some((u16::MAX, u16::MAX))),
+            ],
             [
                 (0, T::VibGripL, Some((u16::MAX, 0u16))),
                 (1, T::VibGripR, Some((0u16, u16::MAX))),
@@ -1065,7 +1116,7 @@ impl App {
             |ui: &mut egui::Ui, (m, name, rumble): (usize, T, Option<(u16, u16)>)| {
                 card(ui, |ui| {
                     ui.label(RichText::new(tr(lang, name)).strong());
-                    if rumble.is_none() {
+                    if m >= 2 {
                         ui.label(dim(tr(lang, T::VibNoTest)));
                     }
                     let mut v = profile.vibration(m);
@@ -1084,10 +1135,13 @@ impl App {
                     let rmin = slider(ui, T::VibMin, &mut v.min);
                     let rmax = slider(ui, T::VibMax, &mut v.max);
                     if v != before {
+                        // The controller needs max > min: push the other end.
                         if v.min != before.min {
-                            v.max = v.max.max(v.min);
+                            v.min = v.min.min(254);
+                            v.max = v.max.max(v.min + 1);
                         } else {
-                            v.min = v.min.min(v.max);
+                            v.max = v.max.max(1);
+                            v.min = v.min.min(v.max - 1);
                         }
                         let _ = profile.set_vibration(m, v);
                     }

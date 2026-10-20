@@ -399,8 +399,12 @@ impl Profile {
                 "vibration motor {motor} out of range"
             )));
         }
-        if v.max < v.min {
-            return Err(Error::Invalid("vibration max must not be below min".into()));
+        // Verified on hardware: the controller keeps its previous value
+        // unless max > min (0/1 is the official "off").
+        if v.max <= v.min {
+            return Err(Error::Invalid(
+                "vibration max must be greater than min".into(),
+            ));
         }
         let o = self.layout.vibration;
         self.raw[o + motor] = v.min;
@@ -587,6 +591,8 @@ mod tests {
         assert_eq!(p.to_bytes()[0x81], 120);
         assert!(p.set_vibration(4, Vibration::OFF).is_err());
         assert!(p.set_vibration(0, Vibration { min: 9, max: 8 }).is_err());
+        assert!(p.set_vibration(0, Vibration { min: 9, max: 9 }).is_err());
+        assert!(p.set_vibration(0, Vibration::OFF).is_ok());
     }
 
     #[test]

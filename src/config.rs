@@ -56,6 +56,9 @@ pub struct Settings {
     pub language: Lang,
     /// Keep the light strip on the HOME logo colour.
     pub strip_follows_logo: bool,
+    /// The user's own stick-curve presets by slot ("1".."3"); TOML cannot
+    /// hold empty array entries, hence a map.
+    pub curve_presets: BTreeMap<String, crate::protocol::profile::Curve>,
     pub autostart: bool,
     pub close_to_tray: bool,
     pub start_hidden: bool,
@@ -66,6 +69,7 @@ impl Default for Settings {
         Self {
             language: Lang::from_env(),
             strip_follows_logo: false,
+            curve_presets: BTreeMap::new(),
             autostart: false,
             close_to_tray: true,
             start_hidden: false,
@@ -318,6 +322,18 @@ mod tests {
         let s = Settings {
             language: Lang::It,
             strip_follows_logo: true,
+            curve_presets: BTreeMap::from([(
+                "2".to_string(),
+                crate::protocol::profile::Curve {
+                    deadzone: 10,
+                    center_comp: 0,
+                    point_a: (20, 30),
+                    point_b: (60, 80),
+                    outer: 90,
+                    max_out: 100,
+                    stabilization: None,
+                },
+            )]),
             autostart: true,
             close_to_tray: false,
             start_hidden: true,
