@@ -16,6 +16,7 @@ use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
 use crate::protocol::macros::{Macro, Step as MacroStep};
 use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
+use crate::protocol::profile::{VIBRATION_MOTORS, Vibration};
 use crate::protocol::strip::{self, Effect, Strip};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +177,7 @@ pub struct App {
     profiles: Vec<NamedProfile>,
     new_profile_name: String,
     shots: Option<ScreenshotRun>,
-    live: Option<live::Shared>,
+    live: Option<live::Live>,
     live_now: LiveState,
     selected_slot: usize,
     /// Buttons from the controller's own key report (covers every button).
@@ -390,13 +391,6 @@ impl App {
                     }
                 }
                 Event::Applied => {
-                    if let (Some(e), Some(s)) = (&self.edit, &self.snap) {
-                        let mut state = config::State::load();
-                        if let Some(uuid) = &s.info.uuid {
-                            state.devices.insert(uuid.clone(), e.config());
-                            let _ = state.save();
-                        }
-                    }
                     self.info(self.t(T::Done));
                 }
                 Event::Message(m) => self.info(format!("{}: {m}", self.t(T::BackupDone))),
@@ -544,6 +538,7 @@ impl App {
 
     fn page_device(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
+        let marker = self.marker();
         let Some(s) = self.snap.clone() else {
             card(ui, |ui| {
                 ui.label(RichText::new(tr(lang, T::Disconnected)).size(18.0));
@@ -633,7 +628,12 @@ impl App {
             ui.label(dim(tr(lang, T::PollingHint)));
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                for (code, hz) in POLLING_CODES {
+                // USB full-speed devices poll at most every 1 ms: 2000 Hz is
+                // only offered for models that can actually do it.
+                for (code, hz) in POLLING_CODES
+                    .into_iter()
+                    .filter(|(_, hz)| *hz <= max_polling_hz(&marker))
+                {
                     let sel = edit.polling_code == Some(code);
                     if ui.selectable_label(sel, format!("{hz} Hz")).clicked() {
                         edit.polling_code = Some(code);
@@ -696,8 +696,9 @@ impl App {
         let self_link = self.snap.as_ref().and_then(|s| s.connection);
         let mut key_test = self.key_test;
         let mut selected = self.selected_slot;
-        let strip = self.edit.as_ref().and_then(|e| e.led_brightness);
-        let logo = self.edit.as_ref().and_then(|e| logo_color(e.logo_colors));
+        let Some(lights) = self.edit.as_ref().map(|e| light_marks(e, false)) else {
+            return no_profile(ui, lang);
+        };
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
@@ -709,12 +710,7 @@ impl App {
         let marks = Marks {
             turbo: profile.turbo_mask(),
             remapped,
-            strip,
-            light: MODE_LIGHT_XINPUT,
-            logo,
-            strip_custom: None,
-            profile: None,
-            lights_only: false,
+            ..lights
         };
         let editor_w = 300.0;
         let pad_w = (ui.available_width() - editor_w - 40.0).max(320.0);
@@ -974,6 +970,72 @@ impl App {
                 });
             }
         });
+        ui.add_space(10.0);
+        let rumble = self.live.as_ref();
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr(lang, T::Vibration)).strong());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if let Some(l) = rumble {
+                        if ui.button(tr(lang, T::VibTestStrong)).clicked() {
+                            l.rumble(u16::MAX);
+                        }
+                        if ui.button(tr(lang, T::VibTestWeak)).clicked() {
+                            l.rumble(u16::MAX / 4);
+                        }
+                    }
+                });
+            });
+            ui.label(dim(tr(lang, T::VibHint)));
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr(lang, T::Presets)).color(TEXT_DIM));
+                for (label, v) in [
+                    (T::VibOff, Vibration::OFF),
+                    (T::VibWeak, Vibration { min: 50, max: 100 }),
+                    (T::VibStandard, Vibration { min: 50, max: 150 }),
+                    (T::VibStrong, Vibration { min: 50, max: 200 }),
+                    (T::FactoryReset, Vibration::FACTORY),
+                ] {
+                    if ui.button(tr(lang, label)).clicked() {
+                        for m in 0..VIBRATION_MOTORS {
+                            let _ = profile.set_vibration(m, v);
+                        }
+                    }
+                }
+            });
+            ui.add_space(4.0);
+            ui.spacing_mut().slider_width = (ui.available_width() / 2.0 - 160.0).max(80.0);
+            egui::Grid::new("vib")
+                .num_columns(3)
+                .spacing([16.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("");
+                    ui.label(dim(tr(lang, T::VibMin)));
+                    ui.label(dim(tr(lang, T::VibMax)));
+                    ui.end_row();
+                    for (m, name) in [T::VibGripL, T::VibGripR, T::VibMotor3, T::VibMotor4]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let mut v = profile.vibration(m);
+                        let before = v;
+                        ui.label(RichText::new(tr(lang, name)).color(TEXT_DIM));
+                        ui.add(egui::Slider::new(&mut v.min, 0..=255));
+                        ui.add(egui::Slider::new(&mut v.max, 0..=255));
+                        ui.end_row();
+                        if v != before {
+                            // Keep the range valid while dragging either end.
+                            if v.min != before.min {
+                                v.max = v.max.max(v.min);
+                            } else {
+                                v.min = v.min.min(v.max);
+                            }
+                            let _ = profile.set_vibration(m, v);
+                        }
+                    }
+                });
+        });
     }
 
     fn page_lights(&mut self, ui: &mut egui::Ui) {
@@ -982,59 +1044,13 @@ impl App {
         let Some(edit) = &mut self.edit else {
             return no_profile(ui, lang);
         };
-        let logo = logo_color(edit.logo_colors);
         card(ui, |ui| {
-            let marks = Marks {
-                turbo: 0,
-                remapped: 0,
-                strip: edit.led_brightness,
-                light: MODE_LIGHT_XINPUT,
-                logo,
-                strip_custom: edit.strip.as_ref().map(|st| {
-                    let side = |v: &Vec<[u8; 3]>| {
-                        v.first()
-                            .map_or(MODE_LIGHT_XINPUT, |c| Color32::from_rgb(c[0], c[1], c[2]))
-                    };
-                    (
-                        side(&st.left),
-                        if st.same {
-                            side(&st.left)
-                        } else {
-                            side(&st.right)
-                        },
-                    )
-                }),
-                profile: None,
-                lights_only: true,
-            };
+            let marks = light_marks(edit, true);
             ui.vertical_centered(|ui| {
                 ui.set_max_width(380.0);
                 pad::pad(ui, None, &marks, &live);
             });
             ui.label(dim(tr(lang, T::ModeLightHint)));
-        });
-        ui.add_space(10.0);
-        card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(tr(lang, T::Brightness)).strong());
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button(tr(lang, T::FactoryReset)).clicked() {
-                        edit.led_brightness = Some(0xff);
-                    }
-                });
-            });
-            ui.label(dim(tr(lang, T::BrightnessHint)));
-            if let Some(b) = &mut edit.led_brightness {
-                let mut pct = (u32::from(*b) * 100 / 255) as u8;
-                if ui
-                    .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
-                    .changed()
-                {
-                    *b = (u32::from(pct) * 255 / 100) as u8;
-                }
-            } else {
-                ui.label(dim("—"));
-            }
         });
         ui.add_space(10.0);
         card(ui, |ui| {
@@ -1090,8 +1106,6 @@ impl App {
                     });
             }
         });
-
-        // ---- custom light strip (opcode 70) -------------------------------
         ui.add_space(10.0);
         let follows_before = self.settings.strip_follows_logo;
         card(ui, |ui| {
@@ -1100,15 +1114,38 @@ impl App {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.button(tr(lang, T::FactoryReset)).clicked() {
                         edit.strip = Some(Strip::default());
+                        edit.led_brightness = Some(0xff);
                         self.settings.strip_follows_logo = false;
                     }
                 });
             });
-            ui.label(dim(tr(lang, T::StripHint)));
+            // One brightness for every light mode: 72 (mode light) and the
+            // custom effect's own brightness move together.
+            if let Some(b) = &mut edit.led_brightness {
+                let mut pct = (u32::from(*b) * 100 / 255) as u8;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tr(lang, T::Brightness)).color(TEXT_DIM));
+                    if ui
+                        .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
+                        .changed()
+                    {
+                        *b = (u32::from(pct) * 255 / 100) as u8;
+                        if let Some(st) = &mut edit.strip {
+                            st.bright = (*b).max(strip::MIN_BRIGHT);
+                        }
+                    }
+                });
+                ui.label(dim(tr(lang, T::BrightnessHint)));
+            }
+            ui.add_space(6.0);
             ui.checkbox(
                 &mut self.settings.strip_follows_logo,
                 tr(lang, T::StripFollowsLogo),
             );
+            ui.add_space(6.0);
+            ui.separator();
+            ui.label(RichText::new(tr(lang, T::StripCustomTitle)).strong());
+            ui.label(dim(tr(lang, T::StripHint)));
             let locked = self.settings.strip_follows_logo;
             let Some(st) = &mut edit.strip else {
                 ui.horizontal(|ui| {
@@ -1121,7 +1158,7 @@ impl App {
             };
             ui.add_enabled_ui(!locked, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(tr(lang, T::StripEffect));
+                    ui.label(RichText::new(tr(lang, T::StripEffect)).color(TEXT_DIM));
                     for (e, t) in Effect::ALL.into_iter().zip([
                         T::StripStatic,
                         T::StripBreathing,
@@ -1131,20 +1168,13 @@ impl App {
                         ui.selectable_value(&mut st.effect, e, tr(lang, t));
                     }
                 });
-                egui::Grid::new("strip")
-                    .num_columns(2)
-                    .spacing([12.0, 8.0])
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(tr(lang, T::StripSpeed)).color(TEXT_DIM));
-                        ui.add_enabled(
-                            st.effect != Effect::Static,
-                            egui::Slider::new(&mut st.speed, 0..=255),
-                        );
-                        ui.end_row();
-                        ui.label(RichText::new(tr(lang, T::Brightness)).color(TEXT_DIM));
-                        ui.add(egui::Slider::new(&mut st.bright, strip::MIN_BRIGHT..=255));
-                        ui.end_row();
-                    });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(tr(lang, T::StripSpeed)).color(TEXT_DIM));
+                    ui.add_enabled(
+                        st.effect != Effect::Static,
+                        egui::Slider::new(&mut st.speed, 0..=255),
+                    );
+                });
                 ui.checkbox(&mut st.same, tr(lang, T::StripSame));
                 let sides: &[(bool, T)] = if st.same {
                     &[(false, T::StripColors)]
@@ -1158,13 +1188,11 @@ impl App {
                         let mut remove = None;
                         for (i, c) in list.iter_mut().enumerate() {
                             ui.color_edit_button_srgb(c);
-                            if list_len_gt1(i) && ui.small_button("✕").clicked() {
+                            if i > 0 && ui.small_button("✕").clicked() {
                                 remove = Some(i);
                             }
                         }
-                        if let Some(i) = remove
-                            && list.len() > 1
-                        {
+                        if let Some(i) = remove {
                             list.remove(i);
                         }
                         if list.len() < strip::MAX_COLORS && ui.small_button("+").clicked() {
@@ -1591,7 +1619,7 @@ impl eframe::App for App {
         self.poll_worker();
         self.sync_strip_with_logo();
         if let Some(l) = &self.live
-            && let Ok(st) = l.lock()
+            && let Ok(st) = l.state.lock()
         {
             self.live_now = st.clone();
         }
@@ -1643,18 +1671,44 @@ fn model_name(marker: &str) -> &'static str {
     }
 }
 
+/// Highest polling rate a model supports (Rainbow 2 Pro: USB full speed,
+/// `bInterval` 1 ms).
+fn max_polling_hz(marker: &str) -> u32 {
+    if marker == "ZJ-C1pro" { 1000 } else { 2000 }
+}
+
 /// Key slots shown for a model (hides unused/reserved slots).
+/// The lights to draw, computed once from the editor state for every tab:
+/// light-strip brightness, the custom strip effect when PadTune knows it
+/// (otherwise the mode colour) and the HOME logo colour.
+fn light_marks(e: &Edit, lights_only: bool) -> Marks {
+    let rgb = |c: &[u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
+    Marks {
+        turbo: 0,
+        remapped: 0,
+        strip: e.led_brightness,
+        light: MODE_LIGHT_XINPUT,
+        logo: logo_color(e.logo_colors),
+        strip_custom: e.strip.as_ref().map(|st| {
+            let left = st.left.first().map_or(MODE_LIGHT_XINPUT, rgb);
+            let right = if st.same {
+                left
+            } else {
+                st.right.first().map_or(left, rgb)
+            };
+            (left, right)
+        }),
+        profile: None,
+        lights_only,
+    }
+}
+
 /// Custom XInput-mode logo colour, if one is set (black = follows the mode).
 fn logo_color(colors: Option<[[u8; 3]; 3]>) -> Option<Color32> {
     colors
         .map(|c| c[crate::protocol::commands::LOGO_SLOT_XINPUT])
         .filter(|c| *c != [0; 3])
         .map(|[r, g, b]| Color32::from_rgb(r, g, b))
-}
-
-/// Every colour after the first can be removed (a side needs at least one).
-fn list_len_gt1(index: usize) -> bool {
-    index > 0
 }
 
 fn macro_key_name(k: u8) -> &'static str {

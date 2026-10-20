@@ -167,6 +167,16 @@ fn handle(req: Request, dev: &mut Option<Device>, emit: &impl Fn(Event)) {
             Request::Apply(delta) => {
                 let d = connect(dev)?;
                 actions::apply(d, &delta)?;
+                // Remember what was applied before re-reading: the strip
+                // effect cannot be read back and comes from this state.
+                if let Ok(uuid) = d
+                    .request(&crate::protocol::commands::get_uuid())
+                    .and_then(|p| crate::protocol::commands::decode_uuid(&p))
+                {
+                    let mut state = crate::config::State::load();
+                    state.devices.entry(uuid).or_default().merge(&delta);
+                    let _ = state.save();
+                }
                 emit(Event::Applied);
                 emit(Event::Snapshot(Box::new(actions::read_snapshot(d)?)));
             }

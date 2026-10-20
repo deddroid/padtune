@@ -170,6 +170,28 @@ impl DeviceConfig {
         }
     }
 
+    /// Overwrites the fields present in `delta`.
+    pub fn merge(&mut self, delta: &DeviceConfig) {
+        if delta.profile.is_some() {
+            self.profile = delta.profile.clone();
+        }
+        if delta.polling_code.is_some() {
+            self.polling_code = delta.polling_code;
+        }
+        if delta.led_brightness.is_some() {
+            self.led_brightness = delta.led_brightness;
+        }
+        if delta.logo_colors.is_some() {
+            self.logo_colors = delta.logo_colors;
+        }
+        if delta.strip.is_some() {
+            self.strip = delta.strip.clone();
+        }
+        for (slot, rec) in &delta.macros {
+            self.macros.insert(*slot, rec.clone());
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         *self == DeviceConfig::default()
     }

@@ -145,6 +145,26 @@ impl KeyMap {
     }
 }
 
+/// Number of vibration motors in the profile.
+pub const VIBRATION_MOTORS: usize = 4;
+
+/// Output range of one vibration motor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Vibration {
+    pub min: u8,
+    pub max: u8,
+}
+
+impl Vibration {
+    /// Factory value on the Rainbow 2 Pro.
+    pub const FACTORY: Vibration = Vibration {
+        min: 0x50,
+        max: 0xff,
+    };
+    /// Motor disabled (as the official app writes "off").
+    pub const OFF: Vibration = Vibration { min: 0, max: 1 };
+}
+
 /// Rapid-fire speed setting.
 pub const TURBO_SPEEDS_HZ: [u8; 3] = [5, 10, 20];
 
@@ -332,10 +352,37 @@ impl Profile {
 
     // ---- vibration -------------------------------------------------------
 
-    /// Raw vibration bytes (layout partly unknown; preserved).
+    /// Raw vibration bytes (four minimums, then four maximums).
     pub fn vibration_raw(&self) -> [u8; 8] {
         let o = self.layout.vibration;
         self.raw[o..o + 8].try_into().expect("8 bytes")
+    }
+
+    /// Output range of a vibration motor: the game's rumble strength is
+    /// scaled between `min` and `max` (0..=255). Motors: 0 = left grip,
+    /// 1 = right grip, 2/3 = triggers (order of 2/3 to be confirmed).
+    /// BlitzForge (v37) documents motors 0 and 1 with the same layout.
+    pub fn vibration(&self, motor: usize) -> Vibration {
+        let o = self.layout.vibration;
+        Vibration {
+            min: self.raw[o + motor],
+            max: self.raw[o + 4 + motor],
+        }
+    }
+
+    pub fn set_vibration(&mut self, motor: usize, v: Vibration) -> Result<()> {
+        if motor >= VIBRATION_MOTORS {
+            return Err(Error::Invalid(format!(
+                "vibration motor {motor} out of range"
+            )));
+        }
+        if v.max < v.min {
+            return Err(Error::Invalid("vibration max must not be below min".into()));
+        }
+        let o = self.layout.vibration;
+        self.raw[o + motor] = v.min;
+        self.raw[o + 4 + motor] = v.max;
+        Ok(())
     }
 
     // ---- key mapping -----------------------------------------------------
@@ -503,6 +550,19 @@ mod tests {
         let frames = p.write_frames();
         assert_eq!(frames.len(), 5);
         assert_eq!(frames[0][..4], [0xa4, 0x40, 0xd7, 0x01]);
+    }
+
+    #[test]
+    fn vibration_fields() {
+        let mut p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
+        for m in 0..VIBRATION_MOTORS {
+            assert_eq!(p.vibration(m), Vibration::FACTORY);
+        }
+        p.set_vibration(1, Vibration { min: 10, max: 120 }).unwrap();
+        assert_eq!(p.to_bytes()[0x7d], 10);
+        assert_eq!(p.to_bytes()[0x81], 120);
+        assert!(p.set_vibration(4, Vibration::OFF).is_err());
+        assert!(p.set_vibration(0, Vibration { min: 9, max: 8 }).is_err());
     }
 
     #[test]
