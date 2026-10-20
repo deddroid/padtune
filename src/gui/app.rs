@@ -158,6 +158,10 @@ pub struct App {
     selected_slot: usize,
     /// Buttons from the controller's own key report (covers every button).
     vendor_keys: Option<u32>,
+    /// Key test active (controller key reports on; gamepad output paused).
+    key_test: bool,
+    /// When each button was last seen pressed, so quick taps stay visible.
+    pressed_at: [Option<Instant>; 32],
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -236,6 +240,8 @@ impl App {
             live_now: LiveState::default(),
             selected_slot: 0,
             vendor_keys: None,
+            key_test: false,
+            pressed_at: [None; 32],
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -307,7 +313,14 @@ impl App {
                         self.set_snapshot(*s);
                     }
                 }
-                Event::Keys(k) => self.vendor_keys = Some(k),
+                Event::Keys(k) => {
+                    for (bit, at) in self.pressed_at.iter_mut().enumerate() {
+                        if k & (1 << bit) != 0 {
+                            *at = Some(Instant::now());
+                        }
+                    }
+                    self.vendor_keys = Some(k);
+                }
                 Event::Battery(b) => {
                     if let Some(p) = self.snap.as_mut().and_then(|s| s.power.as_mut()) {
                         p.battery = b;
@@ -603,9 +616,22 @@ impl App {
         let lang = self.lang();
         let model = self.marker();
         let mut live = self.live_now.clone();
-        if let Some(k) = self.vendor_keys {
-            live.pressed = k;
+        if self.key_test {
+            // Controller reports cover every button; keep quick taps lit briefly.
+            let hold = Duration::from_millis(250);
+            let latched = self
+                .pressed_at
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.is_some_and(|t| t.elapsed() < hold))
+                .fold(0u32, |m, (b, _)| m | (1 << b));
+            live.pressed = self.vendor_keys.unwrap_or(0) | latched;
+            if latched != 0 {
+                ui.ctx().request_repaint_after(Duration::from_millis(50));
+            }
         }
+        let key_test_before = self.key_test;
+        let mut key_test = self.key_test;
         let mut selected = self.selected_slot;
         let strip = self.edit.as_ref().and_then(|e| e.led_brightness);
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
@@ -620,13 +646,30 @@ impl App {
             turbo: profile.turbo_mask(),
             remapped,
             strip,
+            light: MODE_LIGHT_XINPUT,
+            profile: None,
+            lights_only: false,
         };
         let editor_w = 300.0;
-        let pad_w = (ui.available_width() - editor_w - 12.0).max(320.0);
+        let pad_w = (ui.available_width() - editor_w - 40.0).max(320.0);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_max_width(pad_w);
                 card(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.toggle_value(
+                            &mut key_test,
+                            RichText::new(format!("⚡ {}", tr(lang, T::KeyTest))).strong(),
+                        );
+                        ui.label(dim(tr(
+                            lang,
+                            if key_test {
+                                T::KeyTestOn
+                            } else {
+                                T::KeyTestOff
+                            },
+                        )));
+                    });
                     if let Some(slot) = pad::pad(ui, Some(selected), &marks, &live) {
                         selected = slot;
                     }
@@ -718,6 +761,16 @@ impl App {
             }
         });
         self.selected_slot = selected;
+        if key_test != key_test_before {
+            self.set_key_test(key_test);
+        }
+    }
+
+    fn set_key_test(&mut self, on: bool) {
+        self.key_test = on;
+        self.vendor_keys = None;
+        self.pressed_at = [None; 32];
+        self.send(Request::KeyTest(on));
     }
 
     fn page_sticks(&mut self, ui: &mut egui::Ui) {
@@ -851,9 +904,26 @@ impl App {
 
     fn page_lights(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
+        let live = self.live_now.clone();
         let Some(edit) = &mut self.edit else {
             return no_profile(ui, lang);
         };
+        card(ui, |ui| {
+            let marks = Marks {
+                turbo: 0,
+                remapped: 0,
+                strip: edit.led_brightness,
+                light: MODE_LIGHT_XINPUT,
+                profile: None,
+                lights_only: true,
+            };
+            ui.vertical_centered(|ui| {
+                ui.set_max_width(520.0);
+                pad::pad(ui, None, &marks, &live);
+            });
+            ui.label(dim(tr(lang, T::ModeLightHint)));
+        });
+        ui.add_space(10.0);
         card(ui, |ui| {
             ui.label(RichText::new(tr(lang, T::Brightness)).strong());
             ui.label(dim(tr(lang, T::BrightnessHint)));
@@ -1087,6 +1157,10 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // The key test pauses the gamepad output: never leave it on elsewhere.
+        if self.key_test && self.tab != Tab::Buttons {
+            self.set_key_test(false);
+        }
         egui::Panel::left("nav")
             .resizable(false)
             .exact_size(210.0)
@@ -1125,6 +1199,10 @@ fn model_name(marker: &str) -> &'static str {
 }
 
 /// Key slots shown for a model (hides unused/reserved slots).
+/// Colour of the strip/Home light in "mode light" while in XInput mode (the
+/// only mode in which the controller enumerates as `413d:2104`).
+const MODE_LIGHT_XINPUT: Color32 = Color32::from_rgb(0x2e, 0xe0, 0x5a);
+
 /// An on-board feature with the button combination that starts it.
 struct Feature {
     title: T,
@@ -1142,28 +1220,28 @@ const FEATURES: &[Feature] = &[
         desc: T::FTurboD,
         combo: T::FTurboC,
         key_slot: Some(27),
-        tentative: true,
+        tentative: false,
     },
     Feature {
         title: T::FMapT,
         desc: T::FMapD,
         combo: T::FMapC,
         key_slot: Some(29),
-        tentative: true,
+        tentative: false,
     },
     Feature {
         title: T::FMacroT,
         desc: T::FMacroD,
         combo: T::FMacroC,
         key_slot: Some(22),
-        tentative: true,
+        tentative: false,
     },
     Feature {
         title: T::FProfileT,
         desc: T::FProfileD,
         combo: T::FProfileC,
         key_slot: Some(28),
-        tentative: true,
+        tentative: false,
     },
     Feature {
         title: T::FLightT,

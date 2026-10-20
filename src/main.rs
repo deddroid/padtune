@@ -200,6 +200,8 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
                     continue;
                 };
                 if cmd != op::KEY_REPORT {
+                    // Other pushed frames (e.g. status notifications) are shown raw.
+                    println!("frame 0x{cmd:02x} {payload:02x?}");
                     continue;
                 }
                 let Ok(k) = decode_key_report(payload) else {

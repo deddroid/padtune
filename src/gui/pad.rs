@@ -192,6 +192,13 @@ pub struct Marks {
     pub remapped: u32,
     /// Light-strip brightness 0..=255 (None = unknown).
     pub strip: Option<u8>,
+    /// Colour of the strip and Home light ("mode light": green in XInput,
+    /// red in Switch mode, per the official manual).
+    pub light: Color32,
+    /// Active on-board configuration 0..=3 (white LEDs), if known.
+    pub profile: Option<usize>,
+    /// Draw only the lights (Lights tab).
+    pub lights_only: bool,
 }
 
 /// Draws the pad; returns the slot clicked this frame, if any.
@@ -207,32 +214,27 @@ pub fn pad(
     let at = |x: f32, y: f32| Pos2::new(r.left() + x * r.width(), r.top() + y * r.height());
     let s = r.width() / 640.0;
 
-    // Light strip (red → yellow → green, as on the real controller), dimmed by
-    // the configured brightness; drawn under the body so it glows at the edge.
+    // Light strip under the edge of the body, dimmed by the brightness.
     let alpha = f32::from(marks.strip.unwrap_or(255)) / 255.0;
-    let strip: Vec<(Pos2, Color32)> = [
-        (0.14, 0.20, (255, 40, 40)),
-        (0.09, 0.40, (255, 40, 40)),
-        (0.10, 0.62, (255, 80, 30)),
-        (0.20, 0.80, (255, 150, 20)),
-        (0.36, 0.69, (255, 210, 40)),
-        (0.50, 0.69, (220, 230, 40)),
-        (0.64, 0.69, (140, 230, 50)),
-        (0.80, 0.80, (60, 230, 80)),
-        (0.90, 0.62, (60, 230, 80)),
-        (0.91, 0.40, (60, 230, 80)),
-        (0.86, 0.20, (60, 230, 80)),
+    let strip_col = marks.light.gamma_multiply(alpha.max(0.0));
+    let strip: Vec<Pos2> = [
+        (0.14, 0.20),
+        (0.09, 0.40),
+        (0.10, 0.62),
+        (0.20, 0.80),
+        (0.36, 0.69),
+        (0.50, 0.69),
+        (0.64, 0.69),
+        (0.80, 0.80),
+        (0.90, 0.62),
+        (0.91, 0.40),
+        (0.86, 0.20),
     ]
     .iter()
-    .map(|&(x, y, (cr, cg, cb))| {
-        (
-            at(x, y),
-            Color32::from_rgba_unmultiplied(cr, cg, cb, (230.0 * alpha) as u8),
-        )
-    })
+    .map(|&(x, y)| at(x, y))
     .collect();
-    for pair in strip.windows(2) {
-        painter.line_segment([pair[0].0, pair[1].0], Stroke::new(10.0 * s, pair[0].1));
+    if alpha > 0.0 {
+        painter.add(egui::Shape::line(strip, Stroke::new(10.0 * s, strip_col)));
     }
 
     // Body: rounded top bridge and two grips.
@@ -253,7 +255,7 @@ pub fn pad(
     // Four white profile LEDs between the D-pad and the right stick.
     for i in 0..4 {
         let c = at(0.50, 0.46 + i as f32 * 0.045);
-        let lit = i == 0;
+        let lit = marks.profile == Some(i);
         painter.rect_filled(
             Rect::from_center_size(c, Vec2::new(16.0, 5.0) * s),
             2.0,
@@ -280,6 +282,9 @@ pub fn pad(
     let pointer = resp.interact_pointer_pos();
     let hover = resp.hover_pos();
     for spot in SPOTS {
+        if marks.lights_only && spot.kind != Kind::Home {
+            continue;
+        }
         let c = at(spot.at.0, spot.at.1);
         let (size, round) = match spot.kind {
             Kind::Face(_) => (Vec2::splat(34.0), 17.0),
@@ -303,7 +308,7 @@ pub fn pad(
             Kind::Face(col) if pressed => col,
             Kind::Face(_) => BG,
             _ if pressed => ACCENT,
-            Kind::Home => Color32::from_rgb(0xd0, 0x3a, 0x2a),
+            Kind::Home => marks.light,
             Kind::Stick => Color32::from_rgb(0x1b, 0x1d, 0x24),
             Kind::Func => Color32::from_rgb(0x30, 0x33, 0x40),
             _ => CARD,

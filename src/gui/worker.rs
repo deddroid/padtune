@@ -19,6 +19,9 @@ pub enum Request {
     Apply(DeviceConfig),
     /// Save the current profile bytes to a file.
     Backup(std::path::PathBuf),
+    /// Turn the controller's key reports on/off (key test). While on, the
+    /// controller pauses its normal gamepad output.
+    KeyTest(bool),
     /// Switch live key reports off and stop the thread.
     Shutdown,
 }
@@ -67,30 +70,42 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
         wake();
     };
     let mut dev: Option<Device> = None;
-    let mut keys_on = false;
+    // Key test: the controller pushes key reports but pauses its gamepad
+    // output, so it is only on while the user asks for it.
+    let mut keys_wanted = false;
     let mut last_keys = None;
     let mut last_poll = Instant::now();
+    let set_keys = |dev: &Option<Device>, on: bool| {
+        if let Some(d) = dev {
+            let _ = d.request(&commands::set_key_reports(on));
+        }
+    };
     loop {
         match rx.recv_timeout(Duration::from_millis(15)) {
-            Ok(Request::Shutdown) => {
-                if let (Some(d), true) = (&dev, keys_on) {
-                    let _ = d.request(&commands::set_key_reports(false));
+            Ok(Request::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
+                if keys_wanted {
+                    set_keys(&dev, false);
                 }
                 return;
+            }
+            Ok(Request::KeyTest(on)) => {
+                keys_wanted = on;
+                set_keys(&dev, on);
+                last_keys = None;
+                emit(Event::Keys(0));
             }
             Ok(req) => {
                 emit(Event::Busy(true));
                 handle(req, &mut dev, &emit);
                 emit(Event::Busy(false));
-                // Reconnects reset the controller's report switch: re-enable.
-                keys_on = dev
-                    .as_ref()
-                    .is_some_and(|d| d.request(&commands::set_key_reports(true)).is_ok());
+                // A reconnect resets the controller's report switch.
+                if keys_wanted {
+                    set_keys(&dev, true);
+                }
                 last_poll = Instant::now();
             }
             Err(RecvTimeoutError::Timeout) => {
-                // Live key reports pushed by the controller.
-                if let Some(d) = &dev {
+                if keys_wanted && let Some(d) = &dev {
                     while let Ok(Some(r)) = d.recv(Duration::ZERO) {
                         if let Ok(Frame::Short {
                             cmd: op::KEY_REPORT,
@@ -114,25 +129,18 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                         Ok(p) => emit(Event::Battery(p.battery)),
                         Err(e) => {
                             dev = None;
-                            keys_on = false;
                             emit(Event::Disconnected(e.to_string()));
                         }
                     },
                     None => {
                         if crate::device::list().is_ok_and(|l| !l.is_empty()) {
                             handle(Request::Refresh, &mut dev, &emit);
-                            keys_on = dev.as_ref().is_some_and(|d| {
-                                d.request(&commands::set_key_reports(true)).is_ok()
-                            });
+                            if keys_wanted {
+                                set_keys(&dev, true);
+                            }
                         }
                     }
                 }
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                if let (Some(d), true) = (&dev, keys_on) {
-                    let _ = d.request(&commands::set_key_reports(false));
-                }
-                return;
             }
         }
     }
@@ -159,7 +167,7 @@ fn handle(req: Request, dev: &mut Option<Device>, emit: &impl Fn(Event)) {
                 emit(Event::Applied);
                 emit(Event::Snapshot(Box::new(actions::read_snapshot(d)?)));
             }
-            Request::Shutdown => {}
+            Request::Shutdown | Request::KeyTest(_) => {}
             Request::Backup(path) => {
                 let d = connect(dev)?;
                 let p = actions::read_profile(d)?;
