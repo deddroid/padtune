@@ -146,7 +146,7 @@ enum Status {
     Error(String),
 }
 
-/// Automatic screenshot run (`BIGBIGCTL_SCREENSHOTS`).
+/// Automatic screenshot run (`PADTUNE_SCREENSHOTS`).
 struct ScreenshotRun {
     dir: PathBuf,
     steps: Vec<(Lang, Tab)>,
@@ -246,7 +246,7 @@ impl App {
         }
         theme::apply(&cc.egui_ctx);
         let settings = Settings::load();
-        let shots = std::env::var_os("BIGBIGCTL_SCREENSHOTS").map(|d| {
+        let shots = std::env::var_os("PADTUNE_SCREENSHOTS").map(|d| {
             let dir = PathBuf::from(d);
             let _ = std::fs::create_dir_all(&dir);
             let steps = Lang::ALL
@@ -261,7 +261,7 @@ impl App {
                 pending: Default::default(),
             }
         });
-        let demo = shots.is_some() || std::env::var_os("BIGBIGCTL_DEMO").is_some_and(|v| v != "0");
+        let demo = shots.is_some() || std::env::var_os("PADTUNE_DEMO").is_some_and(|v| v != "0");
         let mut app = Self {
             worker: None,
             settings,
@@ -404,7 +404,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             ui.label(
-                RichText::new("BIGBIG WON")
+                RichText::new("PadTune")
                     .strong()
                     .size(18.0)
                     .color(Color32::WHITE),
@@ -647,7 +647,7 @@ impl App {
                     .clicked()
                 {
                     let name = format!(
-                        "bigbigctl-backup-{}.bin",
+                        "padtune-backup-{}.bin",
                         s.info.uuid.clone().unwrap_or_else(|| "controller".into())
                     );
                     let path = dirs::document_dir()
@@ -992,7 +992,14 @@ impl App {
         });
         ui.add_space(10.0);
         card(ui, |ui| {
-            ui.label(RichText::new(tr(lang, T::Brightness)).strong());
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr(lang, T::Brightness)).strong());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button(tr(lang, T::FactoryReset)).clicked() {
+                        edit.led_brightness = Some(0xff);
+                    }
+                });
+            });
             ui.label(dim(tr(lang, T::BrightnessHint)));
             if let Some(b) = &mut edit.led_brightness {
                 let mut pct = (u32::from(*b) * 100 / 255) as u8;
@@ -1058,12 +1065,6 @@ impl App {
                             }
                         });
                     });
-            }
-        });
-        ui.add_space(10.0);
-        card(ui, |ui| {
-            if ui.button(tr(lang, T::BrightnessReset)).clicked() {
-                edit.led_brightness = Some(0xff);
             }
         });
     }
@@ -1364,7 +1365,7 @@ impl App {
         });
         ui.add_space(10.0);
         card(ui, |ui| {
-            ui.label(dim(format!("bigbigctl {}", env!("CARGO_PKG_VERSION"))));
+            ui.label(dim(format!("padtune {}", env!("CARGO_PKG_VERSION"))));
             ui.label(dim(config::config_dir().display().to_string()));
         });
         if self.settings != before && self.shots.is_none() {

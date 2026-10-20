@@ -19,21 +19,21 @@ body:
   - type: textarea
     id: list
     attributes:
-      label: Output of `bigbigctl list`
+      label: Output of `padtune list`
       render: text
     validations:
       required: true
   - type: textarea
     id: info
     attributes:
-      label: Output of `BIGBIGCTL_DEBUG=1 bigbigctl info`
+      label: Output of `PADTUNE_DEBUG=1 padtune info`
       render: text
     validations:
       required: true
   - type: textarea
     id: profile
     attributes:
-      label: Output of `bigbigctl profile` (if it works)
+      label: Output of `padtune profile` (if it works)
       render: text
   - type: textarea
     id: what

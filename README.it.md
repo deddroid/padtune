@@ -1,13 +1,13 @@
-# bigbigctl
+# PadTune
 
-**Configura i controller BIGBIG WON (Rainbow 2 Pro e famiglia) su Linux e Windows** — senza software ufficiale.
+**Configuratore non ufficiale per controller BIGBIG WON® (Rainbow 2 Pro e famiglia) su Linux e Windows** — senza software ufficiale.
 
 [Read in English](README.md)
 
 ![Tasti](docs/screenshots/buttons-it.png)
 
-bigbigctl è un unico programma in Rust con un'interfaccia grafica
-(`bigbigctl-gui`) e uno strumento da riga di comando (`bigbigctl`). Dialoga con
+PadTune è un unico programma in Rust con un'interfaccia grafica
+(`padtune-gui`) e uno strumento da riga di comando (`padtune`). Dialoga con
 l'interfaccia di configurazione del controller, quindi ogni impostazione resta
 **salvata nel controller** e funziona poi su qualsiasi PC o console.
 
@@ -34,24 +34,24 @@ l'interfaccia di configurazione del controller, quindi ogni impostazione resta
 | Rainbow 2 Pro (dongle 2.4G) | `413d:2104` | uguale | `280_v36` | Letture provate; test tasti non disponibile via dongle |
 | Rainbow 2 SE, Rainbow 3, Blitz2, Gale… | `413d:2104` | altri | `240`–`508` | Stessa famiglia di protocollo, **non provati** — la lettura dovrebbe funzionare; le scritture sono rifiutate per layout di profilo sconosciuti |
 
-Hai un altro modello? Apri una issue con l'output di `bigbigctl list` e
-`bigbigctl info` (il modello di issue lo chiede).
+Hai un altro modello? Apri una issue con l'output di `padtune list` e
+`padtune info` (il modello di issue lo chiede).
 
 ## Installazione
 
 ### Arch Linux (AUR)
 
 ```sh
-yay -S bigbigctl        # compila dai sorgenti
-yay -S bigbigctl-bin    # binari precompilati
+yay -S padtune        # compila dai sorgenti
+yay -S padtune-bin    # binari precompilati
 ```
 
 Il pacchetto installa la regola udev, così il controller funziona senza root.
 
 ### Altre distribuzioni Linux
 
-Scarica `bigbigctl-<versione>-linux-x86_64.tar.gz` dalle
-[Release](https://github.com/deddroid/bigbigctl/releases), estrailo ed esegui:
+Scarica `padtune-<versione>-linux-x86_64.tar.gz` dalle
+[Release](https://github.com/deddroid/padtune/releases), estrailo ed esegui:
 
 ```sh
 ./install.sh --udev     # installa in ~/.local; --udev aggiunge la regola udev (sudo)
@@ -60,9 +60,9 @@ Scarica `bigbigctl-<versione>-linux-x86_64.tar.gz` dalle
 
 ### Windows
 
-Scarica `bigbigctl-<versione>-windows-x86_64.zip` dalle
-[Release](https://github.com/deddroid/bigbigctl/releases), estrailo e avvia
-`bigbigctl-gui.exe`. Non servono driver. Gli eseguibili non sono firmati,
+Scarica `padtune-<versione>-windows-x86_64.zip` dalle
+[Release](https://github.com/deddroid/padtune/releases), estrailo e avvia
+`padtune-gui.exe`. Non servono driver. Gli eseguibili non sono firmati,
 quindi SmartScreen può avvisare al primo avvio ("Ulteriori informazioni" →
 "Esegui comunque").
 
@@ -77,37 +77,37 @@ Su Linux servono `hidapi` (hidraw) e, per la GUI, un driver OpenGL funzionante.
 
 ## Uso
 
-Avvia **BIGBIG WON Controller** dal menu, oppure `bigbigctl-gui`. Modifica le
+Avvia **PadTune** dal menu, oppure `padtune-gui`. Modifica le
 impostazioni e premi **Applica al controller**: viene scritto solo ciò che è
 cambiato, e ogni scrittura viene verificata rileggendola.
 
 ```text
-bigbigctl list                      # controller collegati
-bigbigctl info                      # modello, firmware, polling, batteria…
-bigbigctl profile                   # profilo attuale
-bigbigctl backup mio.bin            # salva il profilo
-bigbigctl restore mio.bin           # lo riscrive (verificato)
-bigbigctl macros                    # slot macro con i loro passi
-bigbigctl set polling 1000
-bigbigctl set brightness 128        # striscia LED, 0-255
-bigbigctl set logo ff0000           # colore logo HOME (000000 = fabbrica)
-bigbigctl set trigger left --start 5 --end 90 --hair false
-bigbigctl monitor 30                # test tasti: stampa ogni pressione
+padtune list                      # controller collegati
+padtune info                      # modello, firmware, polling, batteria…
+padtune profile                   # profilo attuale
+padtune backup mio.bin            # salva il profilo
+padtune restore mio.bin           # lo riscrive (verificato)
+padtune macros                    # slot macro con i loro passi
+padtune set polling 1000
+padtune set brightness 128        # striscia LED, 0-255
+padtune set logo ff0000           # colore logo HOME (000000 = fabbrica)
+padtune set trigger left --start 5 --end 90 --hair false
+padtune monitor 30                # test tasti: stampa ogni pressione
 ```
 
-`bigbigctl-gui --hidden` si avvia nella barra di sistema.
+`padtune-gui --hidden` si avvia nella barra di sistema.
 
 ### Variabili d'ambiente
 
 | Variabile | Effetto |
 |---|---|
-| `BIGBIGCTL_DEBUG=1` | Stampa ogni report inviato e ricevuto |
-| `BIGBIGCTL_CONFIG_DIR` | Usa un'altra cartella per impostazioni e profili |
-| `BIGBIGCTL_STATE` | Usa un altro file di stato (ultima configurazione applicata) |
-| `BIGBIGCTL_DEMO=1` | GUI con un Rainbow 2 Pro simulato, senza accesso USB |
-| `BIGBIGCTL_SCREENSHOTS=cartella` | Salva uno screenshot di ogni scheda in ogni lingua, poi esce |
+| `PADTUNE_DEBUG=1` | Stampa ogni report inviato e ricevuto |
+| `PADTUNE_CONFIG_DIR` | Usa un'altra cartella per impostazioni e profili |
+| `PADTUNE_STATE` | Usa un altro file di stato (ultima configurazione applicata) |
+| `PADTUNE_DEMO=1` | GUI con un Rainbow 2 Pro simulato, senza accesso USB |
+| `PADTUNE_SCREENSHOTS=cartella` | Salva uno screenshot di ogni scheda in ogni lingua, poi esce |
 
-Le impostazioni sono in `~/.config/bigbigctl/` (Linux) o `%APPDATA%\bigbigctl\`
+Le impostazioni sono in `~/.config/padtune/` (Linux) o `%APPDATA%\padtune\`
 (Windows): `settings.toml` (preferenze dell'app), `state.toml` (ultima
 configurazione applicata per controller) e `profiles/*.toml`.
 
@@ -136,7 +136,19 @@ Dettagli del protocollo: [docs/PROTOCOL.md](docs/PROTOCOL.md).
   ricerche sul protocollo su cui si basa questo progetto.
 * [REA](https://github.com/morluto/rea) e [Ghidra](https://ghidra-sre.org/) per l'analisi.
 
-Progetto non affiliato a BIGBIG WON. I nomi dei prodotti sono marchi dei rispettivi proprietari.
+## Note legali
+
+PadTune è un progetto indipendente e non ufficiale. **Non è affiliato, approvato
+né sponsorizzato da BIGBIG WON** o dal suo produttore. BIGBIG WON, Rainbow e gli
+altri nomi di prodotto sono marchi dei rispettivi proprietari e sono usati solo
+per indicare con quali controller PadTune funziona.
+
+PadTune non contiene codice, firmware, immagini o altri file del software
+ufficiale. Il protocollo è stato ricostruito a fini di interoperabilità,
+osservando la comunicazione con il proprio controller e studiando gli strumenti
+ufficiali, come consentito a questo scopo (ad esempio dall'articolo 6 della
+direttiva UE 2009/24/CE). PadTune non aggiorna mai il firmware. Uso a proprio
+rischio: tieni sempre un backup (`padtune backup`).
 
 ## Licenza
 

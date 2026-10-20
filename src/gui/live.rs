@@ -58,7 +58,7 @@ pub fn spawn(wake: impl Fn() + Send + 'static) -> Shared {
     let state: Shared = Arc::default();
     let out = state.clone();
     std::thread::Builder::new()
-        .name("bigbigctl-input".into())
+        .name("padtune-input".into())
         .spawn(move || {
             let Ok(mut gilrs) = Gilrs::new() else { return };
             let mut window_start = Instant::now();

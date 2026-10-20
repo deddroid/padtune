@@ -1,4 +1,4 @@
-//! `bigbigctl` — configure BIGBIG WON controllers (Rainbow 2 Pro and the
+//! `padtune` — configure BIGBIG WON controllers (Rainbow 2 Pro and the
 //! `413d:2104` family) on Linux and Windows.
 //!
 //! All packet building and parsing lives in [`protocol`] and is testable

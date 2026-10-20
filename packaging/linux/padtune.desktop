@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=PadTune
+GenericName=Gamepad configurator
+GenericName[it]=Configuratore gamepad
+Comment=Unofficial configurator for BIGBIG WON controllers: buttons, sticks, triggers, lights, macros and polling of BIGBIG WON controllers
+Comment[it]=Configuratore non ufficiale per controller BIGBIG WON: tasti, stick, grilletti, luci, macro e polling dei controller BIGBIG WON
+Exec=padtune-gui
+Icon=padtune
+Terminal=false
+Categories=Settings;HardwareSettings;Game;
+Keywords=gamepad;controller;bigbig won;rainbow;
+StartupWMClass=padtune

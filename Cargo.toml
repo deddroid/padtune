@@ -1,12 +1,12 @@
 [package]
-name = "bigbigctl"
+name = "padtune"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Configure BIGBIG WON controllers (Rainbow 2 Pro and family): buttons, sticks, triggers, lights, macros, polling rate"
+description = "Unofficial configurator for BIGBIG WON controllers (Rainbow 2 Pro and family): buttons, sticks, triggers, lights, macros, polling rate"
 license = "MIT"
 authors = ["deddroid <deddo9412@gmail.com>"]
-repository = "https://github.com/deddroid/bigbigctl"
+repository = "https://github.com/deddroid/padtune"
 readme = "README.md"
 keywords = ["gamepad", "controller", "bigbigwon", "hid", "configuration"]
 categories = ["command-line-utilities", "hardware-support"]
@@ -26,11 +26,11 @@ gui = [
 ]
 
 [[bin]]
-name = "bigbigctl"
+name = "padtune"
 path = "src/main.rs"
 
 [[bin]]
-name = "bigbigctl-gui"
+name = "padtune-gui"
 path = "src/bin/gui.rs"
 required-features = ["gui"]
 

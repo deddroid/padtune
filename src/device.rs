@@ -1,6 +1,6 @@
 //! HID transport: discovery and request/response on the vendor interface.
 //!
-//! Set `BIGBIGCTL_DEBUG=1` to print every report sent and received.
+//! Set `PADTUNE_DEBUG=1` to print every report sent and received.
 
 use std::time::{Duration, Instant};
 
@@ -22,7 +22,7 @@ const READ_TIMEOUT: Duration = Duration::from_millis(1000);
 const RETRIES: usize = 3;
 
 fn debug_enabled() -> bool {
-    std::env::var_os("BIGBIGCTL_DEBUG").is_some_and(|v| v != "0")
+    std::env::var_os("PADTUNE_DEBUG").is_some_and(|v| v != "0")
 }
 
 fn hex(bytes: &[u8]) -> String {

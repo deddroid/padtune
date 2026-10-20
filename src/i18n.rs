@@ -57,7 +57,7 @@ macro_rules! strings {
 }
 
 strings! {
-    AppTitle => "BIGBIG WON Controller", "Controller BIGBIG WON";
+    AppTitle => "PadTune", "Controller BIGBIG WON";
     TabDevice => "Device", "Dispositivo";
     TabButtons => "Buttons", "Tasti";
     TabSticks => "Sticks", "Stick";
@@ -148,7 +148,6 @@ strings! {
     Advanced => "Advanced", "Avanzate";
     LogoOtherModes => "Colours stored for the other console modes (Switch / PlayStation; slot order not verified).", "Colori memorizzati per le altre modalità console (Switch / PlayStation; ordine degli slot non verificato).";
     ModeSlot => "Mode slot", "Slot modalità";
-    BrightnessReset => "Strip brightness: factory default (100%)", "Luminosità striscia: valore di fabbrica (100%)";
     MacroEmpty => "empty", "vuoto";
     MacroSteps => "steps", "passi";
     ProfileName => "Profile name", "Nome profilo";

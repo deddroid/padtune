@@ -2,9 +2,9 @@
 //! device operation runs on the [`worker`] thread.
 //!
 //! Environment variables:
-//! * `BIGBIGCTL_DEMO=1` — show a built-in Rainbow 2 Pro snapshot instead of a
+//! * `PADTUNE_DEMO=1` — show a built-in Rainbow 2 Pro snapshot instead of a
 //!   real device (no USB access at all);
-//! * `BIGBIGCTL_SCREENSHOTS=<dir>` — demo mode that saves a PNG of every tab
+//! * `PADTUNE_SCREENSHOTS=<dir>` — demo mode that saves a PNG of every tab
 //!   in every language to `<dir>`, then exits.
 
 mod app;
@@ -59,8 +59,8 @@ pub struct Shell {
 
 fn native_options() -> eframe::NativeOptions {
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("BIGBIG WON Controller")
-        .with_app_id("bigbigctl")
+        .with_title("PadTune")
+        .with_app_id("padtune")
         .with_inner_size([1060.0, 720.0])
         .with_min_inner_size([820.0, 560.0]);
     if let Some(icon) = icon() {
@@ -77,7 +77,7 @@ fn native_options() -> eframe::NativeOptions {
 /// cannot hide a window, so this works the same everywhere).
 pub fn run() -> eframe::Result {
     let hidden_arg = std::env::args().any(|a| a == "--hidden");
-    let screenshots = std::env::var_os("BIGBIGCTL_SCREENSHOTS").is_some();
+    let screenshots = std::env::var_os("PADTUNE_SCREENSHOTS").is_some();
     let settings = Settings::load();
     let lang = settings.language;
 
@@ -130,7 +130,7 @@ pub fn run() -> eframe::Result {
         if visible {
             let sh = shell.clone();
             eframe::run_native(
-                "bigbigctl",
+                "padtune",
                 native_options(),
                 Box::new(move |cc| Ok(Box::new(App::new(cc, sh)))),
             )?;

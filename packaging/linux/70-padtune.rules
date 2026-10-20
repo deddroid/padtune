@@ -1,5 +1,5 @@
 # BIGBIG WON controllers (Rainbow 2 Pro and family): let the logged-in user
-# configure them without root. Installed by bigbigctl.
+# configure them without root. Installed by padtune.
 # 413d:2104 = controller (USB cable or linked 2.4G dongle)
 # 413d:2106 = 2.4G dongle with no linked controller
 KERNEL=="hidraw*", ATTRS{idVendor}=="413d", ATTRS{idProduct}=="2104", TAG+="uaccess"

@@ -1,8 +1,8 @@
 //! Files on disk: application settings, saved profiles and the last state
 //! sent to the controller.
 //!
-//! Layout under `dirs::config_dir()/bigbigctl/` (override with
-//! `BIGBIGCTL_CONFIG_DIR`, useful for tests):
+//! Layout under `dirs::config_dir()/padtune/` (override with
+//! `PADTUNE_CONFIG_DIR`, useful for tests):
 //!
 //! * `settings.toml` — app preferences (language, tray, autostart…);
 //! * `state.toml`    — last configuration applied, per controller UUID;
@@ -17,11 +17,11 @@ use crate::i18n::Lang;
 use crate::protocol::profile::Profile;
 use crate::{Error, Result};
 
-pub const APP_DIR: &str = "bigbigctl";
+pub const APP_DIR: &str = "padtune";
 
 /// Root configuration directory.
 pub fn config_dir() -> PathBuf {
-    if let Some(p) = std::env::var_os("BIGBIGCTL_CONFIG_DIR") {
+    if let Some(p) = std::env::var_os("PADTUNE_CONFIG_DIR") {
         return PathBuf::from(p);
     }
     dirs::config_dir()
@@ -176,7 +176,7 @@ pub struct State {
 
 impl State {
     pub fn path() -> PathBuf {
-        std::env::var_os("BIGBIGCTL_STATE")
+        std::env::var_os("PADTUNE_STATE")
             .map(PathBuf::from)
             .unwrap_or_else(|| config_dir().join("state.toml"))
     }

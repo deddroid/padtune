@@ -1,6 +1,6 @@
 # BIGBIG WON configuration protocol (413d:2104 family)
 
-This document consolidates what `bigbigctl` knows about the vendor protocol of
+This document consolidates what `padtune` knows about the vendor protocol of
 BIGBIG WON controllers, with the Rainbow 2 Pro (`ZJ-C1pro`) as the reference
 device. Every entry says how it is known:
 
@@ -136,7 +136,7 @@ step:   b0 = duration low nibble <<4 | marker bit0, b1 = duration high byte
 
 HW: an empty slot is `crc 00 0a 00 SS 20 00 00 00`; a macro recorded on the
 controller (A, B, ↑) decoded to the expected bits and timings; a macro written
-by `bigbigctl` (X, pause, Y on M1; A, pause, B on M2) played back correctly.
+by `padtune` (X, pause, Y on M1; A, pause, B on M2) played back correctly.
 
 ## Not yet decoded
 

@@ -53,7 +53,7 @@ impl Worker {
         let (tx, req_rx) = mpsc::channel();
         let (ev_tx, rx) = mpsc::channel();
         thread::Builder::new()
-            .name("bigbigctl-device".into())
+            .name("padtune-device".into())
             .spawn(move || run(req_rx, ev_tx, wake))
             .expect("spawn device thread");
         let w = Self { tx, rx };

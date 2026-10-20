@@ -26,7 +26,7 @@ pub struct Labels {
 
 // ---- single instance --------------------------------------------------------
 
-const SOCKET_NAME: &str = "bigbigctl-gui.sock";
+const SOCKET_NAME: &str = "padtune-gui.sock";
 
 /// Returns `false` if another instance is running (it has been asked to show
 /// its window); otherwise starts listening for later launches.
@@ -46,7 +46,7 @@ pub fn claim_single_instance(tx: Sender<Cmd>) -> bool {
         return true;
     };
     std::thread::Builder::new()
-        .name("bigbigctl-instance".into())
+        .name("padtune-instance".into())
         .spawn(move || {
             for conn in listener.incoming().flatten() {
                 let mut line = String::new();
@@ -89,13 +89,13 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
 
     impl ksni::Tray for Tray {
         fn id(&self) -> String {
-            "bigbigctl".into()
+            "padtune".into()
         }
         fn title(&self) -> String {
             self.labels.tooltip.clone()
         }
         fn icon_name(&self) -> String {
-            "bigbigctl".into()
+            "padtune".into()
         }
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
             self.icon.clone()
@@ -150,7 +150,7 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
         })
         .unwrap_or_default();
     std::thread::Builder::new()
-        .name("bigbigctl-tray".into())
+        .name("padtune-tray".into())
         .spawn(move || {
             let Ok(rt) = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -173,7 +173,7 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
 #[cfg(windows)]
 pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
     std::thread::Builder::new()
-        .name("bigbigctl-tray".into())
+        .name("padtune-tray".into())
         .spawn(move || {
             use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
             use tray_icon::{MouseButton, TrayIconBuilder, TrayIconEvent};
@@ -246,7 +246,7 @@ pub fn set_autostart(enabled: bool) -> std::io::Result<()> {
 #[cfg(target_os = "linux")]
 fn platform_autostart(enabled: bool, exe: &std::path::Path) -> std::io::Result<()> {
     let dir = dirs::config_dir().unwrap_or_default().join("autostart");
-    let file = dir.join("bigbigctl.desktop");
+    let file = dir.join("padtune.desktop");
     if !enabled {
         return match std::fs::remove_file(&file) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
@@ -257,8 +257,8 @@ fn platform_autostart(enabled: bool, exe: &std::path::Path) -> std::io::Result<(
     std::fs::write(
         &file,
         format!(
-            "[Desktop Entry]\nType=Application\nName=BIGBIG WON Controller\n\
-             Exec=\"{}\" --hidden\nIcon=bigbigctl\nX-GNOME-Autostart-enabled=true\n\
+            "[Desktop Entry]\nType=Application\nName=PadTune\n\
+             Exec=\"{}\" --hidden\nIcon=padtune\nX-GNOME-Autostart-enabled=true\n\
              NoDisplay=true\n",
             exe.display()
         ),
@@ -272,9 +272,9 @@ fn platform_autostart(enabled: bool, exe: &std::path::Path) -> std::io::Result<(
     let (run, _) = RegKey::predef(HKEY_CURRENT_USER)
         .create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Run")?;
     if enabled {
-        run.set_value("bigbigctl", &format!("\"{}\" --hidden", exe.display()))
+        run.set_value("padtune", &format!("\"{}\" --hidden", exe.display()))
     } else {
-        match run.delete_value("bigbigctl") {
+        match run.delete_value("padtune") {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
         }

@@ -3,9 +3,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use bigbigctl::actions;
-use bigbigctl::device::{self, Device};
-use bigbigctl::protocol::profile::SLOT_NAMES;
+use padtune::actions;
+use padtune::device::{self, Device};
+use padtune::protocol::profile::SLOT_NAMES;
 
 #[derive(Parser)]
 #[command(
@@ -82,13 +82,13 @@ enum Side {
     Right,
 }
 
-fn parse_rgb(s: &str) -> bigbigctl::Result<[u8; 3]> {
-    let b = bigbigctl::config::from_hex(s.trim_start_matches('#'))?;
+fn parse_rgb(s: &str) -> padtune::Result<[u8; 3]> {
+    let b = padtune::config::from_hex(s.trim_start_matches('#'))?;
     b.try_into()
-        .map_err(|_| bigbigctl::Error::Invalid(format!("colour {s} must be RRGGBB")))
+        .map_err(|_| padtune::Error::Invalid(format!("colour {s} must be RRGGBB")))
 }
 
-fn run(cli: Cli) -> bigbigctl::Result<()> {
+fn run(cli: Cli) -> padtune::Result<()> {
     match cli.cmd {
         Cmd::List => {
             let found = device::list()?;
@@ -173,12 +173,12 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
         }
         Cmd::Set { what } => {
             let dev = Device::open(cli.device.as_deref())?;
-            let mut delta = bigbigctl::config::DeviceConfig::default();
+            let mut delta = padtune::config::DeviceConfig::default();
             match what {
                 SetCmd::Polling { hz } => {
                     delta.polling_code = Some(
-                        bigbigctl::protocol::commands::polling_code(hz).ok_or_else(|| {
-                            bigbigctl::Error::Invalid(format!("{hz} Hz is not supported"))
+                        padtune::protocol::commands::polling_code(hz).ok_or_else(|| {
+                            padtune::Error::Invalid(format!("{hz} Hz is not supported"))
                         })?,
                     )
                 }
@@ -196,10 +196,10 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
                     t.end = end.unwrap_or(t.end);
                     t.hair = hair.unwrap_or(t.hair);
                     p.set_trigger(right, t)?;
-                    delta.profile = Some(bigbigctl::config::to_hex(&p.to_bytes()));
+                    delta.profile = Some(padtune::config::to_hex(&p.to_bytes()));
                 }
                 SetCmd::Logo { color, other } => {
-                    use bigbigctl::protocol::commands::{
+                    use padtune::protocol::commands::{
                         LOGO_SLOT_XINPUT, decode_logo_led, get_logo_led,
                     };
                     let mut colors = decode_logo_led(&dev.request(&get_logo_led())?)?;
@@ -215,9 +215,9 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
             println!("OK (verified by read-back)");
         }
         Cmd::Monitor { seconds } => {
-            use bigbigctl::protocol::commands::{self, decode_key_report, op};
-            use bigbigctl::protocol::frame::{self, Frame};
-            use bigbigctl::protocol::profile::SLOT_NAMES;
+            use padtune::protocol::commands::{self, decode_key_report, op};
+            use padtune::protocol::frame::{self, Frame};
+            use padtune::protocol::profile::SLOT_NAMES;
             let dev = Device::open(cli.device.as_deref())?;
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let flag = stop.clone();
@@ -272,7 +272,7 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
         }
         Cmd::Restore { file } => {
             let dev = Device::open(cli.device.as_deref())?;
-            let p = bigbigctl::protocol::profile::Profile::from_bytes(&std::fs::read(&file)?)?;
+            let p = padtune::protocol::profile::Profile::from_bytes(&std::fs::read(&file)?)?;
             actions::write_profile(&dev, &p)?;
             println!(
                 "Restored {} ({} bytes), verified by read-back",
@@ -282,11 +282,11 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
         }
         Cmd::Macros => {
             let dev = Device::open(cli.device.as_deref())?;
-            for slot in 0..bigbigctl::protocol::macros::SLOTS as u8 {
+            for slot in 0..padtune::protocol::macros::SLOTS as u8 {
                 match actions::read_macro(&dev, slot) {
                     Ok(m) => {
                         let key = match m.run_key {
-                            bigbigctl::protocol::macros::UNBOUND => "unbound".to_string(),
+                            padtune::protocol::macros::UNBOUND => "unbound".to_string(),
                             k => SLOT_NAMES
                                 .get(usize::from(k))
                                 .copied()

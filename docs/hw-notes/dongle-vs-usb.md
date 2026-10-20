@@ -67,7 +67,7 @@ Notes:
 
 ## Key reports (D2) over the dongle
 
-`bigbigctl monitor 60` over the dongle, run twice (once by Claude, once by the user):
+`padtune monitor 60` over the dongle, run twice (once by Claude, once by the user):
 - `D2 01` is acknowledged (`frame 0xd2 [01]`).
 - **No opcode 02 key reports at all**, even with the user pressing A, M1, M2, TURBO, Mapping,
   MACRO, Configuration and FN.
@@ -82,7 +82,7 @@ key/axis frame); its meaning is unknown.
 ### Gamepad output while D2 is active (dongle): it stops completely
 
 Combined test: evdev log of the xpad gamepad (`/dev/input/event8`) for 45 s,
-with `bigbigctl monitor 20` running only from t=15 s to t=35 s. The user moved
+with `padtune monitor 20` running only from t=15 s to t=35 s. The user moved
 the sticks and pressed A/M1/M2/TURBO the whole time.
 
 - t=0–15.03 s: continuous ABS events (sticks, ~2700 lines).
@@ -119,13 +119,13 @@ re-enumerates as a different, idle device:
 | Strings | "2.4G" / "XBOX 360 For Windows" | **"Zikway" / "HID zk"** |
 | Interfaces | 3 (XInput + keyboard + config) | **1**: HID if0, EP 0x83 IN / 0x03 OUT, 64 B, same 29-byte 0xFF7A descriptor |
 
-- `bigbigctl list` shows only the cable (413d:2104, `/dev/hidraw12`); its FA = `01`, D4 = `06 01 01`, 04 = `64 00`.
+- `padtune list` shows only the cable (413d:2104, `/dev/hidraw12`); its FA = `01`, D4 = `06 01 01`, 04 = `64 00`.
 - The idle dongle's hidraw node (`/dev/hidraw10`) is `crw------- root`, because the udev rule only matches
   PID 2104, so it could not be probed. It is probably the dongle's own config/pairing channel.
   To try it, add `ATTRS{idProduct}=="2106"` to the udev rule. That would also let `list` show "dongle present, controller not linked".
 - Cable re-enumerated on another bus (Bus 003) and the dongle stayed on Bus 001; hidraw numbers changed.
 
-Consequences for bigbigctl:
+Consequences for padtune:
 - Only one 2104 config interface exists at a time, so `--device` disambiguation is not needed for cable+dongle.
 - PID 2106 is a useful state: "dongle plugged, controller asleep or on cable". `list` currently filters it out.
 

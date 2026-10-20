@@ -38,11 +38,11 @@ jobs:
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          name=bigbigctl-${GITHUB_REF_NAME#v}-${{ matrix.target }}
+          name=padtune-${GITHUB_REF_NAME#v}-${{ matrix.target }}
           mkdir -p "$name/icons"
-          cp target/release/bigbigctl target/release/bigbigctl-gui "$name/"
+          cp target/release/padtune target/release/padtune-gui "$name/"
           cp LICENSE README.md README.it.md CHANGELOG.md install.sh "$name/"
-          cp packaging/linux/70-bigbigctl.rules packaging/linux/bigbigctl.desktop "$name/"
+          cp packaging/linux/70-padtune.rules packaging/linux/padtune.desktop "$name/"
           cp assets/icon.svg assets/icon-*.png "$name/icons/"
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
@@ -50,17 +50,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $name = "bigbigctl-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.target }}"
+          $name = "padtune-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.target }}"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/release/bigbigctl.exe, target/release/bigbigctl-gui.exe, LICENSE, README.md, README.it.md, CHANGELOG.md $name
+          Copy-Item target/release/padtune.exe, target/release/padtune-gui.exe, LICENSE, README.md, README.it.md, CHANGELOG.md $name
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
           path: |
-            bigbigctl-*.tar.gz*
-            bigbigctl-*.zip*
+            padtune-*.tar.gz*
+            padtune-*.zip*
 
   release:
     needs: build
@@ -72,8 +72,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            bigbigctl-*.tar.gz
-            bigbigctl-*.tar.gz.sha256
-            bigbigctl-*.zip
-            bigbigctl-*.zip.sha256
+            padtune-*.tar.gz
+            padtune-*.tar.gz.sha256
+            padtune-*.zip
+            padtune-*.zip.sha256
           generate_release_notes: true
