@@ -14,6 +14,7 @@ use crate::config::{self, DeviceConfig, NamedProfile, Settings};
 use crate::i18n::{Lang, T, tr};
 use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
+use crate::protocol::macros::{Macro, Step as MacroStep};
 use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +88,7 @@ struct Edit {
     polling_code: Option<u8>,
     led_brightness: Option<u8>,
     logo_colors: Option<[[u8; 3]; 3]>,
+    macros: Vec<Macro>,
 }
 
 impl Edit {
@@ -96,6 +98,7 @@ impl Edit {
             polling_code: s.info.polling_code,
             led_brightness: s.led_brightness,
             logo_colors: s.logo_colors,
+            macros: s.macros.clone(),
         }
     }
 
@@ -105,6 +108,11 @@ impl Edit {
             polling_code: self.polling_code,
             led_brightness: self.led_brightness,
             logo_colors: self.logo_colors,
+            macros: self
+                .macros
+                .iter()
+                .filter_map(|m| m.encode().ok().map(|r| (m.slot, config::to_hex(&r))))
+                .collect(),
         }
     }
 
@@ -120,6 +128,14 @@ impl Edit {
         }
         if c.logo_colors.is_some() {
             self.logo_colors = c.logo_colors;
+        }
+        if let Ok(records) = c.macro_records() {
+            for m in records {
+                match self.macros.iter_mut().find(|x| x.slot == m.slot) {
+                    Some(x) => *x = m,
+                    None => self.macros.push(m),
+                }
+            }
         }
     }
 }
@@ -163,11 +179,12 @@ pub struct App {
     /// When each button was last seen pressed, so quick taps stay visible.
     pressed_at: [Option<Instant>; 32],
     idle_dongle: bool,
+    macro_slot: usize,
 }
 
 fn demo_snapshot() -> Snapshot {
     use crate::actions::DeviceInfo;
-    use crate::protocol::commands::{MacroSlotInfo, Mode, Power};
+    use crate::protocol::commands::{Mode, Power};
     let profile = Profile::from_bytes(&crate::protocol::profile::RAINBOW2PRO_FACTORY).ok();
     Snapshot {
         info: DeviceInfo {
@@ -191,13 +208,31 @@ fn demo_snapshot() -> Snapshot {
             battery: 100,
             status: 0,
         }),
-        macros: vec![
-            MacroSlotInfo {
-                crc: 0xcbe1,
-                len: 10
-            };
-            4
-        ],
+        macros: {
+            let mut m: Vec<Macro> = (0..4).map(Macro::empty).collect();
+            m[0].run_key = 23;
+            m[0].steps = vec![
+                MacroStep {
+                    duration_ms: 160,
+                    marker: false,
+                    inputs: 1,
+                    analog: [0; 4],
+                },
+                MacroStep {
+                    duration_ms: 400,
+                    marker: false,
+                    inputs: 0,
+                    analog: [0; 4],
+                },
+                MacroStep {
+                    duration_ms: 160,
+                    marker: false,
+                    inputs: 1 << 1,
+                    analog: [0; 4],
+                },
+            ];
+            m
+        },
         wireless_flag: Some(1),
         connection: Some(crate::actions::Link::Usb),
     }
@@ -244,6 +279,7 @@ impl App {
             key_test: false,
             pressed_at: [None; 32],
             idle_dongle: false,
+            macro_slot: 0,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -614,6 +650,13 @@ impl App {
                         .join(name);
                     self.send(Request::Backup(path));
                 }
+                if ui.button(tr(lang, T::FactoryResetAll)).clicked()
+                    && let Some(e) = &mut self.edit
+                {
+                    e.apply_config(&DeviceConfig::factory());
+                    self.status =
+                        Status::Info(tr(lang, T::FactoryResetHint).to_string(), Instant::now());
+                }
             });
         });
     }
@@ -641,6 +684,7 @@ impl App {
         let mut key_test = self.key_test;
         let mut selected = self.selected_slot;
         let strip = self.edit.as_ref().and_then(|e| e.led_brightness);
+        let logo = self.edit.as_ref().and_then(|e| logo_color(e.logo_colors));
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
@@ -654,6 +698,7 @@ impl App {
             remapped,
             strip,
             light: MODE_LIGHT_XINPUT,
+            logo,
             profile: None,
             lights_only: false,
         };
@@ -923,17 +968,19 @@ impl App {
         let Some(edit) = &mut self.edit else {
             return no_profile(ui, lang);
         };
+        let logo = logo_color(edit.logo_colors);
         card(ui, |ui| {
             let marks = Marks {
                 turbo: 0,
                 remapped: 0,
                 strip: edit.led_brightness,
                 light: MODE_LIGHT_XINPUT,
+                logo,
                 profile: None,
                 lights_only: true,
             };
             ui.vertical_centered(|ui| {
-                ui.set_max_width(520.0);
+                ui.set_max_width(380.0);
                 pad::pad(ui, None, &marks, &live);
             });
             ui.label(dim(tr(lang, T::ModeLightHint)));
@@ -956,9 +1003,17 @@ impl App {
         });
         ui.add_space(10.0);
         card(ui, |ui| {
-            ui.label(RichText::new(tr(lang, T::LogoColors)).strong());
-            ui.label(dim(tr(lang, T::NotVerified)));
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr(lang, T::LogoColors)).strong());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button(tr(lang, T::FactoryReset)).clicked() {
+                        edit.logo_colors = Some([[0; 3]; 3]);
+                    }
+                });
+            });
+            ui.label(dim(tr(lang, T::LogoHint)));
             if let Some(colors) = &mut edit.logo_colors {
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     for (i, t) in [T::ModeXbox, T::ModeSwitch, T::ModePs]
                         .into_iter()
@@ -967,35 +1022,254 @@ impl App {
                         ui.vertical(|ui| {
                             ui.label(tr(lang, t));
                             ui.color_edit_button_srgb(&mut colors[i]);
+                            if colors[i] == [0; 3] {
+                                ui.label(dim(tr(lang, T::FollowsMode)));
+                            }
                         });
-                        ui.add_space(20.0);
+                        ui.add_space(24.0);
                     }
                 });
+                // Intensity scales all three colours together.
+                let max = colors.iter().flatten().copied().max().unwrap_or(0);
+                let mut pct = u32::from(max) * 100 / 255;
+                ui.horizontal(|ui| {
+                    ui.label(tr(lang, T::LogoIntensity));
+                    if ui
+                        .add_enabled(max > 0, egui::Slider::new(&mut pct, 1..=100).suffix("%"))
+                        .changed()
+                        && max > 0
+                    {
+                        let target = (pct * 255 / 100).max(1);
+                        for c in colors.iter_mut().flatten() {
+                            *c = ((u32::from(*c) * target + u32::from(max) / 2) / u32::from(max))
+                                .min(255) as u8;
+                        }
+                    }
+                });
+            }
+        });
+        ui.add_space(10.0);
+        card(ui, |ui| {
+            if ui.button(tr(lang, T::BrightnessReset)).clicked() {
+                edit.led_brightness = Some(0xff);
             }
         });
     }
 
     fn page_macros(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
-        let Some(s) = &self.snap else {
+        let model = self.marker();
+        let back_keys: Vec<usize> = visible_slots(&model)
+            .into_iter()
+            .filter(|&i| matches!(SLOT_NAMES[i], Some("M1" | "M2" | "M3" | "M4")))
+            .collect();
+        let input_keys: Vec<usize> = visible_slots(&model)
+            .into_iter()
+            .filter(|i| !back_keys.contains(i))
+            .collect();
+        let mut sel = self.macro_slot;
+        let Some(edit) = &mut self.edit else {
             return no_profile(ui, lang);
         };
+        if edit.macros.is_empty() {
+            card(ui, |ui| {
+                ui.label(dim(tr(lang, T::Disconnected)));
+            });
+            return;
+        }
+        sel = sel.min(edit.macros.len() - 1);
         card(ui, |ui| {
-            ui.label(dim(tr(lang, T::NotVerified)));
-            for (i, m) in s.macros.iter().enumerate() {
-                let steps = m.len.saturating_sub(10) / 10;
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!("{} {}", tr(lang, T::MacroSlot), i + 1)).strong(),
-                    );
-                    if steps == 0 {
-                        ui.label(dim(tr(lang, T::MacroEmpty)));
+            ui.label(dim(tr(lang, T::MacroHint)));
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                for (i, m) in edit.macros.iter().enumerate() {
+                    let key = macro_key_name(m.run_key);
+                    let total: u32 = m.steps.iter().map(|s| s.duration_ms).sum();
+                    let text = if m.steps.is_empty() {
+                        format!(
+                            "{} {}\n{}",
+                            tr(lang, T::MacroSlot),
+                            i + 1,
+                            tr(lang, T::MacroEmpty)
+                        )
                     } else {
-                        ui.label(format!("{steps} {}", tr(lang, T::MacroSteps)));
+                        format!(
+                            "{} {}  ·  {key}\n{} {} · {:.1} s",
+                            tr(lang, T::MacroSlot),
+                            i + 1,
+                            m.steps.len(),
+                            tr(lang, T::MacroSteps),
+                            total as f32 / 1000.0
+                        )
+                    };
+                    let b = egui::Button::new(RichText::new(text))
+                        .min_size(Vec2::new(170.0, 48.0))
+                        .fill(if i == sel {
+                            theme::ACCENT_SOFT
+                        } else {
+                            theme::BG
+                        })
+                        .stroke(if i == sel {
+                            Stroke::new(1.0, ACCENT)
+                        } else {
+                            Stroke::NONE
+                        });
+                    if ui.add(b).clicked() {
+                        sel = i;
+                    }
+                }
+            });
+        });
+        ui.add_space(10.0);
+        let m = &mut edit.macros[sel];
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("{} {}", tr(lang, T::MacroSlot), sel + 1))
+                        .size(20.0)
+                        .strong(),
+                );
+                ui.add_space(20.0);
+                ui.label(tr(lang, T::MacroBoundTo));
+                egui::ComboBox::from_id_salt("macro_key")
+                    .selected_text(macro_key_name(m.run_key))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut m.run_key, crate::protocol::macros::UNBOUND, "—");
+                        for &k in &back_keys {
+                            ui.selectable_value(
+                                &mut m.run_key,
+                                k as u8,
+                                SLOT_NAMES[k].unwrap_or("?"),
+                            );
+                        }
+                    });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button(tr(lang, T::MacroClear)).clicked() {
+                        *m = Macro::empty(m.slot);
                     }
                 });
+            });
+            ui.add_space(6.0);
+            macro_timeline(ui, m);
+            ui.add_space(8.0);
+            let mut remove = None;
+            let mut swap = None;
+            egui::Grid::new("steps")
+                .num_columns(4)
+                .striped(true)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label(dim("#"));
+                    ui.label(dim(tr(lang, T::MacroDuration)));
+                    ui.label(dim(tr(lang, T::MacroButtons)));
+                    ui.label("");
+                    ui.end_row();
+                    let n = m.steps.len();
+                    for (i, st) in m.steps.iter_mut().enumerate() {
+                        ui.label(RichText::new(format!("{}", i + 1)).monospace());
+                        ui.add(
+                            egui::DragValue::new(&mut st.duration_ms)
+                                .range(8..=32_760)
+                                .speed(8.0)
+                                .suffix(" ms"),
+                        );
+                        ui.horizontal_wrapped(|ui| {
+                            ui.set_max_width(420.0);
+                            let mut any = false;
+                            for &k in &input_keys {
+                                if st.inputs & (1 << k) != 0 {
+                                    any = true;
+                                    let chip = egui::Button::new(
+                                        RichText::new(format!(
+                                            "{} ✕",
+                                            SLOT_NAMES[k].unwrap_or("?")
+                                        ))
+                                        .color(Color32::WHITE),
+                                    )
+                                    .fill(theme::ACCENT_SOFT)
+                                    .small();
+                                    if ui.add(chip).clicked() {
+                                        st.inputs &= !(1 << k);
+                                    }
+                                }
+                            }
+                            if !any {
+                                ui.label(dim(tr(lang, T::MacroPause)));
+                            }
+                            egui::ComboBox::from_id_salt(("add", i))
+                                .selected_text("+")
+                                .width(40.0)
+                                .show_ui(ui, |ui| {
+                                    for &k in &input_keys {
+                                        if st.inputs & (1 << k) == 0
+                                            && ui
+                                                .selectable_label(
+                                                    false,
+                                                    SLOT_NAMES[k].unwrap_or("?"),
+                                                )
+                                                .clicked()
+                                        {
+                                            st.inputs |= 1 << k;
+                                        }
+                                    }
+                                });
+                        });
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled(i > 0, egui::Button::new("▲").small())
+                                .clicked()
+                            {
+                                swap = Some((i, i - 1));
+                            }
+                            if ui
+                                .add_enabled(i + 1 < n, egui::Button::new("▼").small())
+                                .clicked()
+                            {
+                                swap = Some((i, i + 1));
+                            }
+                            if ui.small_button("✕").clicked() {
+                                remove = Some(i);
+                            }
+                        });
+                        ui.end_row();
+                    }
+                });
+            if let Some(i) = remove {
+                m.steps.remove(i);
             }
+            if let Some((a, b)) = swap {
+                m.steps.swap(a, b);
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let full = m.steps.len() >= crate::protocol::macros::MAX_STEPS;
+                for (label, inputs) in [(T::MacroAddPress, 1u32), (T::MacroAddPause, 0u32)] {
+                    if ui
+                        .add_enabled(!full, egui::Button::new(tr(lang, label)))
+                        .clicked()
+                    {
+                        if m.steps.is_empty() && m.repeat == 0 && !m.run_after_release {
+                            // Header values the controller itself writes when recording
+                            // (meaning unknown; a recorded macro plays with them).
+                            m.run_after_release = true;
+                            m.repeat = 0x000d;
+                        }
+                        m.steps.push(MacroStep {
+                            duration_ms: 160,
+                            marker: false,
+                            inputs,
+                            analog: [0; 4],
+                        });
+                    }
+                }
+                ui.label(dim(format!(
+                    "{}/{}",
+                    m.steps.len(),
+                    crate::protocol::macros::MAX_STEPS
+                )));
+            });
         });
+        self.macro_slot = sel;
     }
 
     fn page_profiles(&mut self, ui: &mut egui::Ui) {
@@ -1214,6 +1488,47 @@ fn model_name(marker: &str) -> &'static str {
 }
 
 /// Key slots shown for a model (hides unused/reserved slots).
+/// Custom XInput-mode logo colour, if one is set (black = follows the mode).
+fn logo_color(colors: Option<[[u8; 3]; 3]>) -> Option<Color32> {
+    colors
+        .map(|c| c[0])
+        .filter(|c| *c != [0; 3])
+        .map(|[r, g, b]| Color32::from_rgb(r, g, b))
+}
+
+fn macro_key_name(k: u8) -> &'static str {
+    if k == crate::protocol::macros::UNBOUND {
+        "—"
+    } else {
+        SLOT_NAMES
+            .get(usize::from(k))
+            .copied()
+            .flatten()
+            .unwrap_or("?")
+    }
+}
+
+/// Proportional timeline of a macro: pressed steps in accent, pauses dim.
+fn macro_timeline(ui: &mut egui::Ui, m: &Macro) {
+    let (resp, painter) =
+        ui.allocate_painter(Vec2::new(ui.available_width(), 18.0), egui::Sense::hover());
+    let r = resp.rect;
+    painter.rect_filled(r, 4.0, theme::BG);
+    let total: u32 = m.steps.iter().map(|s| s.duration_ms).sum::<u32>().max(1);
+    let mut x = r.left();
+    for s in &m.steps {
+        let w = r.width() * s.duration_ms as f32 / total as f32;
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(x, r.top()),
+            Vec2::new((w - 1.0).max(1.0), r.height()),
+        );
+        if s.inputs != 0 {
+            painter.rect_filled(rect, 3.0, ACCENT);
+        }
+        x += w;
+    }
+}
+
 /// Colour of the strip/Home light in "mode light" while in XInput mode (the
 /// only mode in which the controller enumerates as `413d:2104`).
 const MODE_LIGHT_XINPUT: Color32 = Color32::from_rgb(0x2e, 0xe0, 0x5a);

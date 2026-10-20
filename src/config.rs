@@ -107,9 +107,33 @@ pub struct DeviceConfig {
     pub polling_code: Option<u8>,
     pub led_brightness: Option<u8>,
     pub logo_colors: Option<[[u8; 3]; 3]>,
+    /// Macro records by slot (hex encoded, sealed).
+    pub macros: BTreeMap<u8, String>,
 }
 
 impl DeviceConfig {
+    /// Factory state of a Rainbow 2 Pro (`280_v36`), as read from a new unit.
+    pub fn factory() -> Self {
+        use crate::protocol::macros::{Macro, SLOTS};
+        DeviceConfig {
+            profile: Some(to_hex(&crate::protocol::profile::RAINBOW2PRO_FACTORY)),
+            polling_code: Some(0),
+            led_brightness: Some(0xff),
+            logo_colors: Some([[0; 3]; 3]),
+            macros: (0..SLOTS as u8)
+                .map(|s| (s, to_hex(&Macro::empty(s).encode().expect("empty macro"))))
+                .collect(),
+        }
+    }
+
+    /// Decoded macro records.
+    pub fn macro_records(&self) -> Result<Vec<crate::protocol::macros::Macro>> {
+        self.macros
+            .values()
+            .map(|h| from_hex(h).and_then(|b| crate::protocol::macros::Macro::decode(&b)))
+            .collect()
+    }
+
     pub fn profile(&self) -> Option<Result<Profile>> {
         self.profile
             .as_deref()
@@ -129,6 +153,12 @@ impl DeviceConfig {
             polling_code: pick(&self.polling_code, &current.polling_code),
             led_brightness: pick(&self.led_brightness, &current.led_brightness),
             logo_colors: pick(&self.logo_colors, &current.logo_colors),
+            macros: self
+                .macros
+                .iter()
+                .filter(|(slot, rec)| current.macros.get(slot) != Some(rec))
+                .map(|(s, r)| (*s, r.clone()))
+                .collect(),
         }
     }
 
@@ -232,18 +262,21 @@ mod tests {
             polling_code: Some(0),
             led_brightness: Some(255),
             logo_colors: None,
+            macros: BTreeMap::from([(0, "aa".into()), (1, "bb".into())]),
         };
         let wanted = DeviceConfig {
             profile: Some("aa".into()),
             polling_code: Some(1),
             led_brightness: Some(255),
             logo_colors: Some([[1, 2, 3]; 3]),
+            macros: BTreeMap::from([(0, "aa".into()), (1, "cc".into())]),
         };
         let delta = wanted.changes_from(&current);
         assert_eq!(delta.profile, None);
         assert_eq!(delta.polling_code, Some(1));
         assert_eq!(delta.led_brightness, None);
         assert!(delta.logo_colors.is_some());
+        assert_eq!(delta.macros, BTreeMap::from([(1, "cc".to_string())]));
         assert!(current.changes_from(&current).is_empty());
     }
 

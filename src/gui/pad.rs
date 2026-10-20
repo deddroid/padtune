@@ -195,6 +195,8 @@ pub struct Marks {
     /// Colour of the strip and Home light ("mode light": green in XInput,
     /// red in Switch mode, per the official manual).
     pub light: Color32,
+    /// Custom HOME logo colour (None = follows the mode colour).
+    pub logo: Option<Color32>,
     /// Active on-board configuration 0..=3 (white LEDs), if known.
     pub profile: Option<usize>,
     /// Draw only the lights (Lights tab).
@@ -308,7 +310,7 @@ pub fn pad(
             Kind::Face(col) if pressed => col,
             Kind::Face(_) => BG,
             _ if pressed => ACCENT,
-            Kind::Home => marks.light,
+            Kind::Home => marks.logo.unwrap_or(marks.light),
             Kind::Stick => Color32::from_rgb(0x1b, 0x1d, 0x24),
             Kind::Func => Color32::from_rgb(0x30, 0x33, 0x40),
             _ => CARD,

@@ -32,3 +32,12 @@ toml = "0.8"
 [[example]]
 name = "live"
 required-features = ["gui"]
+
+[[example]]
+name = "macro_rewrite"
+
+[[example]]
+name = "macro_xy"
+
+[[example]]
+name = "macro_clear"

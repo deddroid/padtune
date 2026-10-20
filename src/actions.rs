@@ -79,7 +79,7 @@ pub struct Snapshot {
     pub led_brightness: Option<u8>,
     pub logo_colors: Option<[[u8; 3]; 3]>,
     pub power: Option<commands::Power>,
-    pub macros: Vec<MacroSlotInfo>,
+    pub macros: Vec<crate::protocol::macros::Macro>,
     /// Raw `GetWirelessFlag` (FA) reply byte.
     pub wireless_flag: Option<u8>,
     pub connection: Option<Link>,
@@ -111,6 +111,11 @@ impl Snapshot {
             polling_code: self.info.polling_code,
             led_brightness: self.led_brightness,
             logo_colors: self.logo_colors,
+            macros: self
+                .macros
+                .iter()
+                .filter_map(|m| m.encode().ok().map(|r| (m.slot, to_hex(&r))))
+                .collect(),
         }
     }
 }
@@ -128,7 +133,9 @@ pub fn read_snapshot(dev: &Device) -> Result<Snapshot> {
         .and_then(|p| commands::decode_logo_led(&p))
         .ok();
     let power = read_power(dev).ok();
-    let macros = read_macro_list(dev).unwrap_or_default();
+    let macros = (0..crate::protocol::macros::SLOTS as u8)
+        .filter_map(|s| read_macro(dev, s).ok())
+        .collect();
     let wireless_flag = dev
         .request(&commands::get_wireless_flag())
         .ok()
@@ -201,6 +208,9 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
             "logo colours",
         )?;
     }
+    for m in delta.macro_records()? {
+        write_macro(dev, &m)?;
+    }
     if let Some(profile) = delta.profile() {
         write_profile(dev, &profile?)?;
     }
@@ -219,6 +229,38 @@ pub fn write_profile(dev: &Device, profile: &Profile) -> Result<()> {
     if back.to_bytes() != profile.to_bytes() {
         return Err(Error::Protocol(
             "profile read-back differs from what was written".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Reads one macro slot (D9). Short records come back in one `A5` frame,
+/// longer ones as `A4` fragments.
+pub fn read_macro(dev: &Device, slot: u8) -> Result<crate::protocol::macros::Macro> {
+    use crate::protocol::macros::Macro;
+    let req = commands::get_macro(slot);
+    let record = match dev.request(&req) {
+        Ok(p) => p,
+        Err(Error::Protocol(m)) if m.contains("long") => dev.request_blob(&req, |b| {
+            b.len() >= 4 && b.len() >= usize::from(u16::from_be_bytes([b[2], b[3]]))
+        })?,
+        Err(e) => return Err(e),
+    };
+    Macro::decode(&record)
+}
+
+/// Stores a macro (D8), checks the ACK and verifies it by reading it back.
+pub fn write_macro(dev: &Device, m: &crate::protocol::macros::Macro) -> Result<()> {
+    let status = dev.send_blob(&m.write_frames()?)?;
+    if status != 0 {
+        return Err(Error::Protocol(format!(
+            "macro write refused (status 0x{status:02x})"
+        )));
+    }
+    let back = read_macro(dev, m.slot)?;
+    if back.encode()? != m.encode()? {
+        return Err(Error::Protocol(
+            "macro read-back differs from what was written".into(),
         ));
     }
     Ok(())

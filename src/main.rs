@@ -182,7 +182,12 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
                     )
                 }
                 SetCmd::Brightness { value } => delta.led_brightness = Some(value),
-                SetCmd::Trigger { side, start, end, hair } => {
+                SetCmd::Trigger {
+                    side,
+                    start,
+                    end,
+                    hair,
+                } => {
                     let mut p = actions::read_profile(&dev)?;
                     let right = matches!(side, Side::Right);
                     let mut t = p.trigger(right);
@@ -268,9 +273,42 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
         }
         Cmd::Macros => {
             let dev = Device::open(cli.device.as_deref())?;
-            for (i, s) in actions::read_macro_list(&dev)?.iter().enumerate() {
-                let steps = s.len.saturating_sub(10) / 10;
-                println!("Slot {}: {} steps (crc 0x{:04x})", i + 1, steps, s.crc);
+            for slot in 0..bigbigctl::protocol::macros::SLOTS as u8 {
+                match actions::read_macro(&dev, slot) {
+                    Ok(m) => {
+                        let key = match m.run_key {
+                            bigbigctl::protocol::macros::UNBOUND => "unbound".to_string(),
+                            k => SLOT_NAMES
+                                .get(usize::from(k))
+                                .copied()
+                                .flatten()
+                                .unwrap_or("?")
+                                .to_string(),
+                        };
+                        println!(
+                            "Slot {}: {} steps, run key {key}, repeat {}{}{}",
+                            slot + 1,
+                            m.steps.len(),
+                            m.repeat,
+                            if m.looped { ", loop" } else { "" },
+                            if m.run_after_release {
+                                ", after release"
+                            } else {
+                                ""
+                            },
+                        );
+                        for (i, st) in m.steps.iter().enumerate() {
+                            println!(
+                                "  {i:2}: {:5} ms  inputs 0x{:08x}  analog {:?}{}",
+                                st.duration_ms,
+                                st.inputs,
+                                st.analog,
+                                if st.marker { "  [marker]" } else { "" }
+                            );
+                        }
+                    }
+                    Err(e) => println!("Slot {}: error: {e}", slot + 1),
+                }
             }
         }
     }

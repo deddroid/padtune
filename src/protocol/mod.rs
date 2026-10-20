@@ -5,4 +5,5 @@ pub mod commands;
 pub mod crc;
 pub mod frame;
 pub mod keys;
+pub mod macros;
 pub mod profile;
