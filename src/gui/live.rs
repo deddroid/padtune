@@ -28,6 +28,10 @@ fn slot(b: Button) -> Option<usize> {
     Some(match b {
         Button::South => 0,
         Button::East => 1,
+        // Linux xpad reports X/Y swapped relative to gilrs' North/West naming
+        // (observed on hardware); XInput on Windows follows the labels.
+        Button::North if cfg!(target_os = "linux") => 3,
+        Button::West if cfg!(target_os = "linux") => 4,
         Button::West => 3,
         Button::North => 4,
         Button::LeftTrigger => 6,
@@ -117,6 +121,16 @@ pub fn spawn(wake: impl Fn() + Send + 'static) -> Shared {
                     }
                 }
                 if changed {
+                    let mut s = state.lock().expect("live state");
+                    // Triggers are analog axes: derive their pressed bits.
+                    for (v, bit) in [(s.lt, 8), (s.rt, 9)] {
+                        if v > 0.5 {
+                            s.pressed |= 1 << bit;
+                        } else {
+                            s.pressed &= !(1 << bit);
+                        }
+                    }
+                    drop(s);
                     wake();
                 }
             }

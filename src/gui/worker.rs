@@ -3,11 +3,13 @@
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::actions::{self, Snapshot};
 use crate::config::DeviceConfig;
 use crate::device::Device;
+use crate::protocol::commands::{self, op};
+use crate::protocol::frame::{self, Frame};
 
 #[derive(Debug)]
 pub enum Request {
@@ -17,6 +19,8 @@ pub enum Request {
     Apply(DeviceConfig),
     /// Save the current profile bytes to a file.
     Backup(std::path::PathBuf),
+    /// Switch live key reports off and stop the thread.
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -24,6 +28,8 @@ pub enum Event {
     Busy(bool),
     Snapshot(Box<Snapshot>),
     Battery(u8),
+    /// Pressed buttons from the controller's live key report (slot bits).
+    Keys(u32),
     Disconnected(String),
     Applied,
     Message(String),
@@ -61,31 +67,73 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
         wake();
     };
     let mut dev: Option<Device> = None;
+    let mut keys_on = false;
+    let mut last_keys = None;
+    let mut last_poll = Instant::now();
     loop {
-        match rx.recv_timeout(Duration::from_secs(3)) {
+        match rx.recv_timeout(Duration::from_millis(15)) {
+            Ok(Request::Shutdown) => {
+                if let (Some(d), true) = (&dev, keys_on) {
+                    let _ = d.request(&commands::set_key_reports(false));
+                }
+                return;
+            }
             Ok(req) => {
                 emit(Event::Busy(true));
                 handle(req, &mut dev, &emit);
                 emit(Event::Busy(false));
+                // Reconnects reset the controller's report switch: re-enable.
+                keys_on = dev
+                    .as_ref()
+                    .is_some_and(|d| d.request(&commands::set_key_reports(true)).is_ok());
+                last_poll = Instant::now();
             }
             Err(RecvTimeoutError::Timeout) => {
+                // Live key reports pushed by the controller.
+                if let Some(d) = &dev {
+                    while let Ok(Some(r)) = d.recv(Duration::ZERO) {
+                        if let Ok(Frame::Short {
+                            cmd: op::KEY_REPORT,
+                            payload,
+                        }) = frame::parse(&r)
+                            && let Ok(k) = commands::decode_key_report(payload)
+                            && last_keys != Some(k.keys)
+                        {
+                            last_keys = Some(k.keys);
+                            emit(Event::Keys(k.keys));
+                        }
+                    }
+                }
+                if last_poll.elapsed() < Duration::from_secs(3) {
+                    continue;
+                }
+                last_poll = Instant::now();
                 // Periodic poll: battery when connected, hot-plug when not.
                 match &dev {
                     Some(d) => match actions::read_power(d) {
                         Ok(p) => emit(Event::Battery(p.battery)),
                         Err(e) => {
                             dev = None;
+                            keys_on = false;
                             emit(Event::Disconnected(e.to_string()));
                         }
                     },
                     None => {
                         if crate::device::list().is_ok_and(|l| !l.is_empty()) {
                             handle(Request::Refresh, &mut dev, &emit);
+                            keys_on = dev.as_ref().is_some_and(|d| {
+                                d.request(&commands::set_key_reports(true)).is_ok()
+                            });
                         }
                     }
                 }
             }
-            Err(RecvTimeoutError::Disconnected) => return,
+            Err(RecvTimeoutError::Disconnected) => {
+                if let (Some(d), true) = (&dev, keys_on) {
+                    let _ = d.request(&commands::set_key_reports(false));
+                }
+                return;
+            }
         }
     }
 }
@@ -111,6 +159,7 @@ fn handle(req: Request, dev: &mut Option<Device>, emit: &impl Fn(Event)) {
                 emit(Event::Applied);
                 emit(Event::Snapshot(Box::new(actions::read_snapshot(d)?)));
             }
+            Request::Shutdown => {}
             Request::Backup(path) => {
                 let d = connect(dev)?;
                 let p = actions::read_profile(d)?;

@@ -156,6 +156,8 @@ pub struct App {
     live: Option<live::Shared>,
     live_now: LiveState,
     selected_slot: usize,
+    /// Buttons from the controller's own key report (covers every button).
+    vendor_keys: Option<u32>,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -233,6 +235,7 @@ impl App {
             live: None,
             live_now: LiveState::default(),
             selected_slot: 0,
+            vendor_keys: None,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -304,6 +307,7 @@ impl App {
                         self.set_snapshot(*s);
                     }
                 }
+                Event::Keys(k) => self.vendor_keys = Some(k),
                 Event::Battery(b) => {
                     if let Some(p) = self.snap.as_mut().and_then(|s| s.power.as_mut()) {
                         p.battery = b;
@@ -519,6 +523,42 @@ impl App {
                 });
         });
         ui.add_space(10.0);
+        card(ui, |ui| {
+            ui.label(RichText::new(tr(lang, T::Connections)).strong());
+            ui.add_space(4.0);
+            egui::Grid::new("links")
+                .num_columns(3)
+                .spacing([24.0, 8.0])
+                .show(ui, |ui| {
+                    for (link, label) in [
+                        (crate::actions::Link::Usb, T::Wired),
+                        (crate::actions::Link::Dongle, T::Wireless),
+                    ] {
+                        let active = s.connection == Some(link);
+                        ui.label(RichText::new("●").color(if active {
+                            OK
+                        } else {
+                            Color32::from_gray(70)
+                        }));
+                        ui.label(RichText::new(tr(lang, label)).strong());
+                        if active {
+                            let hz = s
+                                .info
+                                .polling_code
+                                .and_then(polling_hz)
+                                .map(|h| format!(" · {h} Hz"))
+                                .unwrap_or_default();
+                            ui.label(
+                                RichText::new(format!("{}{hz}", tr(lang, T::Active))).color(OK),
+                            );
+                        } else {
+                            ui.label(dim(tr(lang, T::NotConnected)));
+                        }
+                        ui.end_row();
+                    }
+                });
+        });
+        ui.add_space(10.0);
         let Some(edit) = &mut self.edit else { return };
         card(ui, |ui| {
             ui.label(RichText::new(tr(lang, T::PollingRate)).strong());
@@ -562,8 +602,12 @@ impl App {
     fn page_buttons(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         let model = self.marker();
-        let live = self.live_now.clone();
+        let mut live = self.live_now.clone();
+        if let Some(k) = self.vendor_keys {
+            live.pressed = k;
+        }
         let mut selected = self.selected_slot;
+        let strip = self.edit.as_ref().and_then(|e| e.led_brightness);
         let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) else {
             return no_profile(ui, lang);
         };
@@ -575,6 +619,7 @@ impl App {
         let marks = Marks {
             turbo: profile.turbo_mask(),
             remapped,
+            strip,
         };
         let editor_w = 300.0;
         let pad_w = (ui.available_width() - editor_w - 12.0).max(320.0);
@@ -594,6 +639,12 @@ impl App {
                     let name = SLOT_NAMES[selected].unwrap_or("?");
                     ui.label(RichText::new(name).size(24.0).strong());
                     ui.add_space(6.0);
+                    if let Some(f) = FEATURES.iter().find(|f| f.key_slot == Some(selected)) {
+                        ui.label(RichText::new(tr(lang, T::FunctionKey)).color(WARN));
+                        ui.add_space(6.0);
+                        feature_body(ui, lang, f);
+                        return;
+                    }
                     ui.label(dim(tr(lang, T::Action)));
                     let mut map = profile.key(selected);
                     if keymap_editor(ui, lang, selected, &mut map, &slots) {
@@ -638,6 +689,33 @@ impl App {
                     ui.label(dim(tr(lang, T::TurboHint)));
                 })
             });
+        });
+        ui.add_space(10.0);
+        card(ui, |ui| {
+            ui.label(RichText::new(tr(lang, T::Functions)).strong().size(17.0));
+            ui.label(dim(tr(lang, T::FunctionsHint)));
+            ui.add_space(6.0);
+            let cols = if ui.available_width() > 700.0 { 3 } else { 2 };
+            let col_w =
+                ((ui.available_width() - 14.0 * (cols as f32 - 1.0)) / cols as f32).max(160.0);
+            for row in FEATURES.chunks(cols) {
+                ui.horizontal_top(|ui| {
+                    for f in row {
+                        egui::Frame::new()
+                            .fill(theme::BG)
+                            .corner_radius(egui::CornerRadius::same(10))
+                            .inner_margin(egui::Margin::same(12))
+                            .show(ui, |ui| {
+                                ui.set_width((col_w - 24.0).max(120.0));
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(tr(lang, f.title)).strong());
+                                    feature_body(ui, lang, f);
+                                });
+                            });
+                    }
+                });
+                ui.add_space(8.0);
+            }
         });
         self.selected_slot = selected;
     }
@@ -778,6 +856,7 @@ impl App {
         };
         card(ui, |ui| {
             ui.label(RichText::new(tr(lang, T::Brightness)).strong());
+            ui.label(dim(tr(lang, T::BrightnessHint)));
             if let Some(b) = &mut edit.led_brightness {
                 let mut pct = (u32::from(*b) * 100 / 255) as u8;
                 if ui
@@ -986,6 +1065,14 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(w) = &self.worker {
+            w.send(Request::Shutdown);
+            // Give the device thread a moment to switch key reports off.
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_worker();
         if let Some(l) = &self.live
@@ -1038,9 +1125,115 @@ fn model_name(marker: &str) -> &'static str {
 }
 
 /// Key slots shown for a model (hides unused/reserved slots).
+/// An on-board feature with the button combination that starts it.
+struct Feature {
+    title: T,
+    desc: T,
+    combo: T,
+    /// Front function key that starts it, if any (drawn on the pad).
+    key_slot: Option<usize>,
+    /// The key assignment comes from icons/manual and is not yet confirmed.
+    tentative: bool,
+}
+
+const FEATURES: &[Feature] = &[
+    Feature {
+        title: T::FTurboT,
+        desc: T::FTurboD,
+        combo: T::FTurboC,
+        key_slot: Some(27),
+        tentative: true,
+    },
+    Feature {
+        title: T::FMapT,
+        desc: T::FMapD,
+        combo: T::FMapC,
+        key_slot: Some(29),
+        tentative: true,
+    },
+    Feature {
+        title: T::FMacroT,
+        desc: T::FMacroD,
+        combo: T::FMacroC,
+        key_slot: Some(22),
+        tentative: true,
+    },
+    Feature {
+        title: T::FProfileT,
+        desc: T::FProfileD,
+        combo: T::FProfileC,
+        key_slot: Some(28),
+        tentative: true,
+    },
+    Feature {
+        title: T::FLightT,
+        desc: T::FLightD,
+        combo: T::FLightC,
+        key_slot: Some(30),
+        tentative: false,
+    },
+    Feature {
+        title: T::FVibT,
+        desc: T::FVibD,
+        combo: T::FVibC,
+        key_slot: None,
+        tentative: false,
+    },
+    Feature {
+        title: T::FVolT,
+        desc: T::FVolD,
+        combo: T::FVolC,
+        key_slot: None,
+        tentative: false,
+    },
+    Feature {
+        title: T::FGyroT,
+        desc: T::FGyroD,
+        combo: T::FGyroC,
+        key_slot: None,
+        tentative: false,
+    },
+    Feature {
+        title: T::FModeT,
+        desc: T::FModeD,
+        combo: T::FModeC,
+        key_slot: None,
+        tentative: false,
+    },
+    Feature {
+        title: T::FCalT,
+        desc: T::FCalD,
+        combo: T::FCalC,
+        key_slot: None,
+        tentative: false,
+    },
+];
+
+fn feature_body(ui: &mut egui::Ui, lang: Lang, f: &Feature) {
+    ui.label(RichText::new(tr(lang, f.desc)).color(TEXT_DIM));
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            RichText::new(format!("{}:", tr(lang, T::HowToStart)))
+                .small()
+                .color(TEXT_DIM),
+        );
+        ui.label(RichText::new(tr(lang, f.combo)).strong().color(ACCENT));
+    });
+    if f.tentative {
+        ui.label(
+            RichText::new(format!("({})", tr(lang, T::ToConfirm)))
+                .small()
+                .color(WARN),
+        );
+    }
+}
+
 fn visible_slots(marker: &str) -> Vec<usize> {
     (0..SLOT_NAMES.len())
         .filter(|&i| SLOT_NAMES[i].is_some())
+        // Front function keys are not remappable.
+        .filter(|i| !crate::protocol::profile::FUNCTION_SLOTS.contains(i))
         .filter(|&i| {
             let name = SLOT_NAMES[i].unwrap_or_default();
             // Rainbow 2 Pro has only M1/M2 at the back.

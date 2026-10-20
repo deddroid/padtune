@@ -37,6 +37,12 @@ enum Cmd {
         #[command(subcommand)]
         what: SetCmd,
     },
+    /// Print every button press reported by the controller (key test).
+    Monitor {
+        /// Seconds to listen.
+        #[arg(default_value_t = 30)]
+        seconds: u64,
+    },
     /// Restore a profile from a backup file.
     Restore { file: PathBuf },
 }
@@ -163,6 +169,60 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
             }
             actions::apply(&dev, &delta)?;
             println!("OK (verified by read-back)");
+        }
+        Cmd::Monitor { seconds } => {
+            use bigbigctl::protocol::commands::{self, decode_key_report, op};
+            use bigbigctl::protocol::frame::{self, Frame};
+            use bigbigctl::protocol::profile::SLOT_NAMES;
+            let dev = Device::open(cli.device.as_deref())?;
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let flag = stop.clone();
+            // Ctrl+C must still switch the key reports off again.
+            let _ =
+                ctrlc::set_handler(move || flag.store(true, std::sync::atomic::Ordering::SeqCst));
+            dev.request(&commands::set_key_reports(true))?;
+            println!("Listening for {seconds}s — press buttons one at a time (Ctrl+C to stop).");
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+            let mut last = None;
+            while std::time::Instant::now() < end && !stop.load(std::sync::atomic::Ordering::SeqCst)
+            {
+                let r = match dev.recv(std::time::Duration::from_millis(200)) {
+                    Ok(Some(r)) => r,
+                    Ok(None) => continue,
+                    // A signal interrupts the blocking read; the loop condition then stops.
+                    Err(_) if stop.load(std::sync::atomic::Ordering::SeqCst) => break,
+                    Err(e) => {
+                        let _ = dev.request(&commands::set_key_reports(false));
+                        return Err(e);
+                    }
+                };
+                let Ok(Frame::Short { cmd, payload }) = frame::parse(&r) else {
+                    continue;
+                };
+                if cmd != op::KEY_REPORT {
+                    continue;
+                }
+                let Ok(k) = decode_key_report(payload) else {
+                    println!("raw {payload:02x?}");
+                    continue;
+                };
+                if last == Some(k.keys) {
+                    continue;
+                }
+                last = Some(k.keys);
+                let names: Vec<String> = (0..32)
+                    .filter(|b| k.keys & (1 << b) != 0)
+                    .map(|b| SLOT_NAMES[b].map_or(format!("bit{b}"), |n| format!("{n}(bit{b})")))
+                    .collect();
+                println!(
+                    "keys 0x{:08x} [{}]  raw {:02x?}",
+                    k.keys,
+                    names.join(" "),
+                    payload
+                );
+            }
+            let _ = dev.request(&commands::set_key_reports(false));
+            println!("Key reports switched off.");
         }
         Cmd::Restore { file } => {
             let dev = Device::open(cli.device.as_deref())?;

@@ -27,6 +27,8 @@ pub mod op {
     pub const LOGO_LED: u8 = 0xf5;
     pub const TRIGGER_LOCK: u8 = 0xf8;
     pub const WIRELESS: u8 = 0xfa;
+    pub const KEY_REPORT_SWITCH: u8 = 0xd2;
+    pub const KEY_REPORT: u8 = 0x02;
 }
 
 pub fn get_zkm_version() -> [u8; REPORT_LEN] {
@@ -146,6 +148,36 @@ pub fn decode_logo_led(payload: &[u8]) -> Result<[[u8; 3]; 3]> {
     Ok(std::array::from_fn(|i| {
         [payload[i * 3], payload[i * 3 + 1], payload[i * 3 + 2]]
     }))
+}
+
+/// `SetReceiveGamepadKeyPressedEvent`: when enabled the controller pushes a
+/// [`KeyReport`] on the vendor interface for every input change.
+pub fn set_key_reports(enabled: bool) -> [u8; REPORT_LEN] {
+    short(op::KEY_REPORT_SWITCH, &[u8::from(enabled)])
+}
+
+/// Input state pushed by the controller (opcode `02`).
+///
+/// Two layouts exist: the official assistant's `OnGamepadKey` parses a long
+/// form with stick axes, while the Rainbow 2 Pro (`ZJ-C1pro`) sends a compact
+/// 5-byte form with buttons only (verified on hardware).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct KeyReport {
+    /// Pressed buttons, one bit per key slot (big-endian on the wire); the
+    /// bit numbers match the profile key-mapping slots.
+    pub keys: u32,
+    /// Stick axes `[lx, ly, rx, ry]` when the long form is used.
+    pub axes: Option<[i16; 4]>,
+}
+
+pub fn decode_key_report(payload: &[u8]) -> Result<KeyReport> {
+    need(payload, 4, "key report")?;
+    let keys = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+    let axes = (payload.len() >= 12).then(|| {
+        let i = |o: usize| i16::from_be_bytes([payload[o], payload[o + 1]]);
+        [i(4), i(6), i(8), i(10)]
+    });
+    Ok(KeyReport { keys, axes })
 }
 
 fn need(payload: &[u8], n: usize, what: &str) -> Result<()> {
@@ -280,6 +312,23 @@ mod tests {
         assert_eq!(decode_power(&payload(&pw)).unwrap().battery, 100);
         let logo = [0xa5, 0x0d, 0xf5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xa7];
         assert_eq!(decode_logo_led(&payload(&logo)).unwrap(), [[0; 3]; 3]);
+    }
+
+    #[test]
+    fn decodes_compact_key_reports() {
+        // Rainbow 2 Pro: A, LT, M1, M2 and the FN triangle (2026-10-20).
+        for (bytes, bit) in [
+            ([0, 0, 0, 0x01, 0], 0),
+            ([0, 0, 0x01, 0, 0], 8),
+            ([0, 0x80, 0, 0, 0], 23),
+            ([0x01, 0, 0, 0, 0], 24),
+            ([0x40, 0, 0, 0, 0], 30),
+        ] {
+            let k = decode_key_report(&bytes).unwrap();
+            assert_eq!(k.keys, 1 << bit);
+            assert_eq!(k.axes, None);
+        }
+        assert_eq!(set_key_reports(true)[..5], [0xa5, 0x05, 0xd2, 0x01, 0x7d]);
     }
 
     #[test]

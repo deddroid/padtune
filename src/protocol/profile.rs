@@ -367,8 +367,9 @@ impl Profile {
     }
 }
 
-/// Canonical names of the 32 key slots (input side), as used by the official
-/// assistant's keymap order. `None` = reserved/unused on this family.
+/// Names of the 32 key slots. The same bit numbers are used by the profile
+/// key map, the turbo mask and the live key report (`02`), verified on a
+/// Rainbow 2 Pro by pressing every button. `None` = not present.
 pub const SLOT_NAMES: [Option<&str>; KEY_SLOTS] = [
     Some("A"),
     Some("B"),
@@ -392,17 +393,21 @@ pub const SLOT_NAMES: [Option<&str>; KEY_SLOTS] = [
     Some("Right"),
     None,
     None,
-    None,
+    Some("Rec"),
     Some("M1"),
     Some("M2"),
     Some("M3"),
     Some("M4"),
-    None,
-    None,
-    None,
-    None,
+    Some("Turbo"),
+    Some("Profile"),
+    Some("Map"),
+    Some("FN"),
     None,
 ];
+
+/// Slots of the front function keys (they trigger on-board features and are
+/// not remapped by the profile).
+pub const FUNCTION_SLOTS: [usize; 5] = [27, 29, 22, 28, 30];
 
 /// Factory profile read from a Rainbow 2 Pro (ZJ-C1pro) on 2026-10-20.
 pub const RAINBOW2PRO_FACTORY: [u8; 280] = {
