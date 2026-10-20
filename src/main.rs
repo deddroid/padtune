@@ -59,6 +59,26 @@ enum SetCmd {
         switch: String,
         ps: String,
     },
+    /// Trigger range (profile write).
+    Trigger {
+        /// left or right
+        side: Side,
+        /// Travel (%) below which the trigger reads as released.
+        #[arg(long)]
+        start: Option<u8>,
+        /// Travel (%) at which it reads as fully pressed.
+        #[arg(long)]
+        end: Option<u8>,
+        /// Hair trigger on/off.
+        #[arg(long)]
+        hair: Option<bool>,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Side {
+    Left,
+    Right,
 }
 
 fn parse_rgb(s: &str) -> bigbigctl::Result<[u8; 3]> {
@@ -162,6 +182,16 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
                     )
                 }
                 SetCmd::Brightness { value } => delta.led_brightness = Some(value),
+                SetCmd::Trigger { side, start, end, hair } => {
+                    let mut p = actions::read_profile(&dev)?;
+                    let right = matches!(side, Side::Right);
+                    let mut t = p.trigger(right);
+                    t.start = start.unwrap_or(t.start);
+                    t.end = end.unwrap_or(t.end);
+                    t.hair = hair.unwrap_or(t.hair);
+                    p.set_trigger(right, t)?;
+                    delta.profile = Some(bigbigctl::config::to_hex(&p.to_bytes()));
+                }
                 SetCmd::Logo { xbox, switch, ps } => {
                     delta.logo_colors =
                         Some([parse_rgb(&xbox)?, parse_rgb(&switch)?, parse_rgb(&ps)?])
