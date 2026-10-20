@@ -126,7 +126,7 @@ strings! {
     Active => "active", "attiva";
     DonglePresent => "plugged in, controller not linked", "collegato, controller non associato";
     KeyTestCable => "Key test needs the USB cable (the dongle does not forward key reports).", "Il test tasti richiede il cavo USB (il dongle non inoltra i report dei tasti).";
-    LogoColors => "Logo colour per mode", "Colore logo per modalità";
+    LogoColors => "HOME logo colour", "Colore logo HOME";
     ModeXbox => "Xbox / PC", "Xbox / PC";
     ModeSwitch => "Switch", "Switch";
     ModePs => "PlayStation", "PlayStation";
@@ -142,9 +142,12 @@ strings! {
     FactoryReset => "Factory default", "Valori di fabbrica";
     FactoryResetAll => "Load factory settings", "Carica impostazioni di fabbrica";
     FactoryResetHint => "Loads the factory configuration read from a new Rainbow 2 Pro (profile, polling, lights, empty macros). Nothing is sent until you press Apply.", "Carica la configurazione di fabbrica letta da un Rainbow 2 Pro nuovo (profilo, polling, luci, macro vuote). Non viene inviato nulla finché non premi Applica.";
-    LogoHint => "Colour of the HOME logo for each console mode (verified). Black = follow the mode colour, as from the factory.", "Colore del logo HOME per ogni modalità console (verificato). Nero = segue il colore della modalità, come da fabbrica.";
+    LogoHint => "Overrides the HOME light colour in XInput/PC mode (verified). Black = follow the mode colour (green), as from the factory.", "Sostituisce il colore della luce HOME in modalità XInput/PC (verificato). Nero = segue il colore della modalità (verde), come da fabbrica.";
     FollowsMode => "follows mode", "segue la modalità";
     LogoIntensity => "Intensity", "Intensità";
+    Advanced => "Advanced", "Avanzate";
+    LogoOtherModes => "Colours stored for the other console modes (Switch / PlayStation; slot order not verified).", "Colori memorizzati per le altre modalità console (Switch / PlayStation; ordine degli slot non verificato).";
+    ModeSlot => "Mode slot", "Slot modalità";
     BrightnessReset => "Strip brightness: factory default (100%)", "Luminosità striscia: valore di fabbrica (100%)";
     MacroEmpty => "empty", "vuoto";
     MacroSteps => "steps", "passi";

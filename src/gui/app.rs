@@ -1013,24 +1013,16 @@ impl App {
             });
             ui.label(dim(tr(lang, T::LogoHint)));
             if let Some(colors) = &mut edit.logo_colors {
+                use crate::protocol::commands::LOGO_SLOT_XINPUT as X;
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    for (i, t) in [T::ModeXbox, T::ModeSwitch, T::ModePs]
-                        .into_iter()
-                        .enumerate()
-                    {
-                        ui.vertical(|ui| {
-                            ui.label(tr(lang, t));
-                            ui.color_edit_button_srgb(&mut colors[i]);
-                            if colors[i] == [0; 3] {
-                                ui.label(dim(tr(lang, T::FollowsMode)));
-                            }
-                        });
-                        ui.add_space(24.0);
+                    ui.color_edit_button_srgb(&mut colors[X]);
+                    if colors[X] == [0; 3] {
+                        ui.label(dim(tr(lang, T::FollowsMode)));
                     }
                 });
-                // Intensity scales all three colours together.
-                let max = colors.iter().flatten().copied().max().unwrap_or(0);
+                // Intensity: scale the colour, keeping its hue.
+                let max = colors[X].iter().copied().max().unwrap_or(0);
                 let mut pct = u32::from(max) * 100 / 255;
                 ui.horizontal(|ui| {
                     ui.label(tr(lang, T::LogoIntensity));
@@ -1040,12 +1032,27 @@ impl App {
                         && max > 0
                     {
                         let target = (pct * 255 / 100).max(1);
-                        for c in colors.iter_mut().flatten() {
+                        for c in colors[X].iter_mut() {
                             *c = ((u32::from(*c) * target + u32::from(max) / 2) / u32::from(max))
                                 .min(255) as u8;
                         }
                     }
                 });
+                ui.add_space(4.0);
+                egui::CollapsingHeader::new(tr(lang, T::Advanced))
+                    .id_salt("logo_adv")
+                    .show(ui, |ui| {
+                        ui.label(dim(tr(lang, T::LogoOtherModes)));
+                        ui.horizontal(|ui| {
+                            for i in (0..3).filter(|i| *i != X) {
+                                ui.vertical(|ui| {
+                                    ui.label(format!("{} {}", tr(lang, T::ModeSlot), i + 1));
+                                    ui.color_edit_button_srgb(&mut colors[i]);
+                                });
+                                ui.add_space(24.0);
+                            }
+                        });
+                    });
             }
         });
         ui.add_space(10.0);
@@ -1491,7 +1498,7 @@ fn model_name(marker: &str) -> &'static str {
 /// Custom XInput-mode logo colour, if one is set (black = follows the mode).
 fn logo_color(colors: Option<[[u8; 3]; 3]>) -> Option<Color32> {
     colors
-        .map(|c| c[0])
+        .map(|c| c[crate::protocol::commands::LOGO_SLOT_XINPUT])
         .filter(|c| *c != [0; 3])
         .map(|[r, g, b]| Color32::from_rgb(r, g, b))
 }

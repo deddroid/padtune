@@ -111,7 +111,14 @@ pub fn set_led_brightness(value: u8) -> [u8; REPORT_LEN] {
     short(op::LED_BRIGHT, &[value])
 }
 
-/// `SetLogoLED`: three RGB colours (Xbox, Switch, PlayStation modes).
+/// Index of the logo colour used in XInput mode (verified on a Rainbow 2 Pro:
+/// only the third colour changes the HOME light while in XInput mode).
+pub const LOGO_SLOT_XINPUT: usize = 2;
+
+/// `SetLogoLED`: three RGB colours, one per console mode. Slot
+/// [`LOGO_SLOT_XINPUT`] is XInput/PC; the other two belong to the other modes
+/// (Switch / PlayStation in the official assistant, order not verified).
+/// Black (`000000`) means "follow the mode colour" (factory state).
 pub fn set_logo_led(colors: [[u8; 3]; 3]) -> [u8; REPORT_LEN] {
     let mut payload = [0u8; 9];
     for (i, c) in colors.iter().enumerate() {

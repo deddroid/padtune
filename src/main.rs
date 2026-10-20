@@ -53,11 +53,12 @@ enum SetCmd {
     Polling { hz: u32 },
     /// LED brightness, 0-255.
     Brightness { value: u8 },
-    /// Logo colours for Xbox, Switch and PlayStation modes (RRGGBB each).
+    /// HOME logo colour in XInput/PC mode (RRGGBB; 000000 = factory/follow mode).
     Logo {
-        xbox: String,
-        switch: String,
-        ps: String,
+        color: String,
+        /// Also set the two other console-mode slots (RRGGBB each).
+        #[arg(long, num_args = 2, value_names = ["SLOT1", "SLOT2"])]
+        other: Option<Vec<String>>,
     },
     /// Trigger range (profile write).
     Trigger {
@@ -197,9 +198,17 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
                     p.set_trigger(right, t)?;
                     delta.profile = Some(bigbigctl::config::to_hex(&p.to_bytes()));
                 }
-                SetCmd::Logo { xbox, switch, ps } => {
-                    delta.logo_colors =
-                        Some([parse_rgb(&xbox)?, parse_rgb(&switch)?, parse_rgb(&ps)?])
+                SetCmd::Logo { color, other } => {
+                    use bigbigctl::protocol::commands::{
+                        LOGO_SLOT_XINPUT, decode_logo_led, get_logo_led,
+                    };
+                    let mut colors = decode_logo_led(&dev.request(&get_logo_led())?)?;
+                    colors[LOGO_SLOT_XINPUT] = parse_rgb(&color)?;
+                    if let Some(o) = other {
+                        colors[0] = parse_rgb(&o[0])?;
+                        colors[1] = parse_rgb(&o[1])?;
+                    }
+                    delta.logo_colors = Some(colors)
                 }
             }
             actions::apply(&dev, &delta)?;
