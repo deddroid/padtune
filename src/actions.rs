@@ -92,11 +92,13 @@ pub enum Link {
     Dongle,
 }
 
-/// Maps the `FA` flag to a link type. Verified on hardware: `01` over the
-/// USB cable. Other values stay unknown until observed.
+/// Maps the `FA` flag to a link type. Verified on hardware (2026-10-20):
+/// `01` over the USB cable, `00` over the 2.4G dongle. VID/PID and strings are
+/// identical on both links, so this is the only reliable way to tell them apart.
 pub fn link_from_flag(flag: u8) -> Option<Link> {
     match flag {
         0x01 => Some(Link::Usb),
+        0x00 => Some(Link::Dongle),
         _ => None,
     }
 }
@@ -220,4 +222,16 @@ pub fn write_profile(dev: &Device, profile: &Profile) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wireless_flag_mapping_from_hardware() {
+        assert_eq!(link_from_flag(1), Some(Link::Usb));
+        assert_eq!(link_from_flag(0), Some(Link::Dongle));
+        assert_eq!(link_from_flag(7), None);
+    }
 }

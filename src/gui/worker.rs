@@ -31,6 +31,8 @@ pub enum Event {
     Busy(bool),
     Snapshot(Box<Snapshot>),
     Battery(u8),
+    /// Whether an idle 2.4G dongle (no linked controller) is plugged in.
+    IdleDongle(bool),
     /// Pressed buttons from the controller's live key report (slot bits).
     Keys(u32),
     Disconnected(String),
@@ -123,6 +125,7 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                     continue;
                 }
                 last_poll = Instant::now();
+                emit(Event::IdleDongle(crate::device::idle_dongle_present()));
                 // Periodic poll: battery when connected, hot-plug when not.
                 match &dev {
                     Some(d) => match actions::read_power(d) {

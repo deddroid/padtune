@@ -13,6 +13,9 @@ pub const VENDOR_ID: u16 = 0x413d;
 /// Wired controller and its 2.4 GHz dongle both enumerate with this PID.
 pub const PRODUCT_IDS: &[u16] = &[0x2104];
 pub const CONFIG_USAGE_PAGE: u16 = 0xff7a;
+/// The 2.4G dongle re-enumerates as `413d:2106` ("Zikway" / "HID zk") while
+/// its controller is not linked (asleep, or switched to the USB cable).
+pub const IDLE_DONGLE_PID: u16 = 0x2106;
 const CONFIG_INTERFACE: i32 = 2;
 
 const READ_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -72,6 +75,14 @@ pub fn list() -> Result<Vec<Candidate>> {
         .collect();
     out.dedup_by(|a, b| a.path == b.path);
     Ok(out)
+}
+
+/// Whether a 2.4G dongle without a linked controller is plugged in.
+pub fn idle_dongle_present() -> bool {
+    HidApi::new().is_ok_and(|api| {
+        api.device_list()
+            .any(|i| i.vendor_id() == VENDOR_ID && i.product_id() == IDLE_DONGLE_PID)
+    })
 }
 
 /// An open configuration channel.

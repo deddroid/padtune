@@ -162,6 +162,7 @@ pub struct App {
     key_test: bool,
     /// When each button was last seen pressed, so quick taps stay visible.
     pressed_at: [Option<Instant>; 32],
+    idle_dongle: bool,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -242,6 +243,7 @@ impl App {
             vendor_keys: None,
             key_test: false,
             pressed_at: [None; 32],
+            idle_dongle: false,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -313,6 +315,7 @@ impl App {
                         self.set_snapshot(*s);
                     }
                 }
+                Event::IdleDongle(p) => self.idle_dongle = p,
                 Event::Keys(k) => {
                     for (bit, at) in self.pressed_at.iter_mut().enumerate() {
                         if k & (1 << bit) != 0 {
@@ -548,6 +551,7 @@ impl App {
                         (crate::actions::Link::Dongle, T::Wireless),
                     ] {
                         let active = s.connection == Some(link);
+                        let idle = link == crate::actions::Link::Dongle && self.idle_dongle;
                         ui.label(RichText::new("●").color(if active {
                             OK
                         } else {
@@ -564,6 +568,8 @@ impl App {
                             ui.label(
                                 RichText::new(format!("{}{hz}", tr(lang, T::Active))).color(OK),
                             );
+                        } else if idle {
+                            ui.label(RichText::new(tr(lang, T::DonglePresent)).color(WARN));
                         } else {
                             ui.label(dim(tr(lang, T::NotConnected)));
                         }
@@ -631,6 +637,7 @@ impl App {
             }
         }
         let key_test_before = self.key_test;
+        let self_link = self.snap.as_ref().and_then(|s| s.connection);
         let mut key_test = self.key_test;
         let mut selected = self.selected_slot;
         let strip = self.edit.as_ref().and_then(|e| e.led_brightness);
@@ -656,7 +663,15 @@ impl App {
             ui.vertical(|ui| {
                 ui.set_max_width(pad_w);
                 card(ui, |ui| {
+                    let on_dongle = self_link == Some(crate::actions::Link::Dongle);
+                    if on_dongle {
+                        key_test = false;
+                    }
                     ui.horizontal(|ui| {
+                        if on_dongle {
+                            ui.label(dim(tr(lang, T::KeyTestCable)));
+                            return;
+                        }
                         ui.toggle_value(
                             &mut key_test,
                             RichText::new(format!("⚡ {}", tr(lang, T::KeyTest))).strong(),

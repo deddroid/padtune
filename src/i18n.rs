@@ -124,6 +124,8 @@ strings! {
     ModeLightHint => "In “mode light” (default) the strip and the Home light share the mode colour: green in XInput, red in Switch. Double-click FN cycles mode light / custom light / off.", "In “luce modalità” (predefinita) striscia e luce Home hanno il colore della modalità: verde in XInput, rosso in Switch. Doppio clic su FN alterna luce modalità / personalizzata / spenta.";
     NotConnected => "not connected", "non collegato";
     Active => "active", "attiva";
+    DonglePresent => "plugged in, controller not linked", "collegato, controller non associato";
+    KeyTestCable => "Key test needs the USB cable (the dongle does not forward key reports).", "Il test tasti richiede il cavo USB (il dongle non inoltra i report dei tasti).";
     LogoColors => "Logo colour per mode", "Colore logo per modalità";
     ModeXbox => "Xbox / PC", "Xbox / PC";
     ModeSwitch => "Switch", "Switch";
