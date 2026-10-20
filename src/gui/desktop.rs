@@ -131,7 +131,7 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
     // StatusNotifierItem wants ARGB32 in network byte order.
     let icon = icon_rgba()
         .map(|(rgba, w, h)| {
-            let data = rgba.chunks_exact(4).flat_map(|p| [p[3], p[0], p[1], p[2]]).collect();
+            let data = rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[3], p[0], p[1], p[2]]).collect();
             vec![ksni::Icon { width: w as i32, height: h as i32, data }]
         })
         .unwrap_or_default();
