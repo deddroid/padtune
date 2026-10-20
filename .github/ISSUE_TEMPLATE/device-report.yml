@@ -1,0 +1,48 @@
+name: Device report / Segnalazione dispositivo
+description: My controller is not recognised or behaves differently / Il mio controller non viene riconosciuto o si comporta diversamente
+labels: [device]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Controller model / Modello
+      placeholder: e.g. Rainbow 2 SE, Rainbow 3, Blitz2
+    validations:
+      required: true
+  - type: dropdown
+    id: link
+    attributes:
+      label: Connection / Collegamento
+      options: [USB cable, 2.4G dongle, Bluetooth]
+    validations:
+      required: true
+  - type: textarea
+    id: list
+    attributes:
+      label: Output of `bigbigctl list`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: info
+    attributes:
+      label: Output of `BIGBIGCTL_DEBUG=1 bigbigctl info`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: profile
+    attributes:
+      label: Output of `bigbigctl profile` (if it works)
+      render: text
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Cosa è successo
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / Sistema operativo
+      placeholder: e.g. Arch Linux, KDE Wayland / Windows 11

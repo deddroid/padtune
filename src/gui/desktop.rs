@@ -31,10 +31,12 @@ const SOCKET_NAME: &str = "bigbigctl-gui.sock";
 /// Returns `false` if another instance is running (it has been asked to show
 /// its window); otherwise starts listening for later launches.
 pub fn claim_single_instance(tx: Sender<Cmd>) -> bool {
-    use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions, Stream};
+    use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream, prelude::*};
     use std::io::{BufRead, BufReader, Write};
 
-    let Ok(name) = SOCKET_NAME.to_ns_name::<GenericNamespaced>() else { return true };
+    let Ok(name) = SOCKET_NAME.to_ns_name::<GenericNamespaced>() else {
+        return true;
+    };
     if let Ok(mut conn) = Stream::connect(name.clone()) {
         let _ = conn.write_all(b"show\n");
         return false;
@@ -99,7 +101,10 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
             self.icon.clone()
         }
         fn tool_tip(&self) -> ksni::ToolTip {
-            ksni::ToolTip { title: self.labels.tooltip.clone(), ..Default::default() }
+            ksni::ToolTip {
+                title: self.labels.tooltip.clone(),
+                ..Default::default()
+            }
         }
         fn activate(&mut self, _x: i32, _y: i32) {
             let _ = self.tx.send(Cmd::Show);
@@ -131,14 +136,26 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
     // StatusNotifierItem wants ARGB32 in network byte order.
     let icon = icon_rgba()
         .map(|(rgba, w, h)| {
-            let data = rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[3], p[0], p[1], p[2]]).collect();
-            vec![ksni::Icon { width: w as i32, height: h as i32, data }]
+            let data = rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|p| [p[3], p[0], p[1], p[2]])
+                .collect();
+            vec![ksni::Icon {
+                width: w as i32,
+                height: h as i32,
+                data,
+            }]
         })
         .unwrap_or_default();
     std::thread::Builder::new()
         .name("bigbigctl-tray".into())
         .spawn(move || {
-            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
                 return;
             };
             rt.block_on(async move {
@@ -188,13 +205,22 @@ pub fn spawn_tray(tx: Sender<Cmd>, labels: Labels) {
                     }
                 }
                 while let Ok(ev) = MenuEvent::receiver().try_recv() {
-                    let cmd = if ev.id == *show.id() { Cmd::Show } else if ev.id == *quit.id() { Cmd::Quit } else { continue };
+                    let cmd = if ev.id == *show.id() {
+                        Cmd::Show
+                    } else if ev.id == *quit.id() {
+                        Cmd::Quit
+                    } else {
+                        continue;
+                    };
                     if tx.send(cmd).is_err() {
                         return;
                     }
                 }
                 while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, .. } = ev
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = ev
                         && tx.send(Cmd::Show).is_err()
                     {
                         return;

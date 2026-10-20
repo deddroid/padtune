@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 
 use crate::config::Settings;
-use crate::i18n::{tr, T};
+use crate::i18n::{T, tr};
 use desktop::Cmd;
 
 /// Tray icon (embedded PNG).
@@ -66,7 +66,10 @@ fn native_options() -> eframe::NativeOptions {
     if let Some(icon) = icon() {
         viewport = viewport.with_icon(icon);
     }
-    eframe::NativeOptions { viewport, ..Default::default() }
+    eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    }
 }
 
 /// Runs the GUI. With the tray enabled, closing the window keeps the program

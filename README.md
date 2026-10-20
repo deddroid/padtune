@@ -1,0 +1,141 @@
+# bigbigctl
+
+**Configure BIGBIG WON controllers (Rainbow 2 Pro and family) on Linux and Windows** — no official software needed.
+
+[Leggi in italiano](README.it.md)
+
+![Buttons](docs/screenshots/buttons-en.png)
+
+bigbigctl is a single Rust program with a desktop GUI (`bigbigctl-gui`) and a
+command line tool (`bigbigctl`). It talks to the controller's own
+configuration interface, so every setting is stored **in the controller** and
+works on any PC or console afterwards.
+
+## Features
+
+| | |
+|---|---|
+| **Buttons** | Remap any button to another button or to a keyboard key (with modifiers), disable it, per-button **turbo** and turbo speed. Click the button on a drawing of your controller. |
+| **Sticks** | Response curve editor (dead zone, anti-dead zone, two curve points, outer limit, max output), presets, three curve sets, live stick position. |
+| **Triggers** | Dead zone start, full-press point, hair trigger, live trigger travel. |
+| **Lights** | Light-strip brightness, HOME logo colour with intensity, back to factory defaults with one click. |
+| **Macros** | Edit the four on-board macros step by step (buttons held, duration), bind them to M1/M2. |
+| **Polling rate** | Read and set 250 / 500 / 1000 / 2000 Hz. |
+| **Device** | Model, firmware, serial, battery, USB cable vs 2.4G dongle, key test (every button including M1/M2, FN and the front keys), backup/restore, factory settings. |
+| **Profiles** | Save named profiles and apply them with one click — only the parts that changed are sent. |
+| **Controller functions** | What every on-board shortcut does (TURBO, Mapping, MACRO, Configuration, FN combos, calibration, mode switch), from the official manual. |
+| **Desktop** | Tray icon, start with the system, single instance, English and Italian. |
+
+## Compatibility
+
+| Model | USB ID | Firmware / marker | Profile | Status |
+|---|---|---|---|---|
+| Rainbow 2 Pro (cable) | `413d:2104` | ZKM 6, `ZJ-C1pro` | `280_v36` | **Tested**: everything above |
+| Rainbow 2 Pro (2.4G dongle) | `413d:2104` | same | `280_v36` | Reads tested; key test not available over the dongle |
+| Rainbow 2 SE, Rainbow 3, Blitz2, Gale… | `413d:2104` | other | `240`–`508` | Same protocol family, **untested** — reading should work; writes are refused for unknown profile layouts |
+
+Have another model? Open an issue with the output of `bigbigctl list` and
+`bigbigctl info` (the issue template asks for it).
+
+## Install
+
+### Arch Linux (AUR)
+
+```sh
+yay -S bigbigctl        # builds from source
+yay -S bigbigctl-bin    # prebuilt binaries
+```
+
+The package installs the udev rule, so the controller works without root.
+
+### Other Linux distributions
+
+Download `bigbigctl-<version>-linux-x86_64.tar.gz` from
+[Releases](https://github.com/deddroid/bigbigctl/releases), extract it and run:
+
+```sh
+./install.sh --udev     # installs in ~/.local; --udev adds the udev rule (sudo)
+./install.sh --uninstall
+```
+
+### Windows
+
+Download `bigbigctl-<version>-windows-x86_64.zip` from
+[Releases](https://github.com/deddroid/bigbigctl/releases), extract it and
+run `bigbigctl-gui.exe`. No driver is needed. The executables are not signed,
+so SmartScreen may warn on first launch ("More info" → "Run anyway").
+
+### From source
+
+```sh
+cargo build --release                       # GUI + CLI
+cargo build --release --no-default-features # CLI only (no GUI dependencies)
+```
+
+Linux needs `hidapi` (hidraw) and, for the GUI, a working OpenGL driver.
+
+## Usage
+
+Start **BIGBIG WON Controller** from the menu, or `bigbigctl-gui`. Edit the
+settings, then press **Apply to controller**: only what changed is written,
+and every write is verified by reading it back.
+
+```text
+bigbigctl list                      # connected controllers
+bigbigctl info                      # model, firmware, polling, battery…
+bigbigctl profile                   # current profile
+bigbigctl backup my.bin             # save the profile
+bigbigctl restore my.bin            # write it back (verified)
+bigbigctl macros                    # macro slots with their steps
+bigbigctl set polling 1000
+bigbigctl set brightness 128        # light strip, 0-255
+bigbigctl set logo ff0000           # HOME logo colour (000000 = factory)
+bigbigctl set trigger left --start 5 --end 90 --hair false
+bigbigctl monitor 30                # key test: prints every button press
+```
+
+`bigbigctl-gui --hidden` starts in the tray.
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `BIGBIGCTL_DEBUG=1` | Print every report sent and received |
+| `BIGBIGCTL_CONFIG_DIR` | Use another settings/profiles directory |
+| `BIGBIGCTL_STATE` | Use another state file (last applied configuration) |
+| `BIGBIGCTL_DEMO=1` | GUI with a built-in Rainbow 2 Pro, no USB access |
+| `BIGBIGCTL_SCREENSHOTS=dir` | Save a screenshot of every tab in every language, then exit |
+
+Settings live in `~/.config/bigbigctl/` (Linux) or `%APPDATA%\bigbigctl\`
+(Windows): `settings.toml` (app preferences), `state.toml` (last
+configuration applied per controller) and `profiles/*.toml`.
+
+## Known limitations
+
+* The **key test** pauses the gamepad while it is on (the controller works
+  that way) and only works over the USB cable.
+* The **active on-board configuration** (the four white LEDs) cannot be read
+  from the controller.
+* The **custom colour of the light strip** (FN double-click) cannot be set yet;
+  brightness and the HOME logo colour can.
+* Vibration and motion-control settings are kept untouched but not editable yet.
+* Windows builds are produced by CI and have not been tested on a real
+  Windows machine by the author.
+
+Protocol details: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## Credits
+
+* **deddroid** — author, hardware testing.
+* **Claude** (Anthropic) — reverse engineering and code, written with deddroid.
+* [BlitzForge](https://github.com/tikokuma/BlitzForge) by tikokuma,
+  [Better BigBig Won Assistant](https://github.com/XBXSean/-BBBWA-BetterBigBigWonAssistant-) by XBXSean,
+  [armorx-toolkit](https://github.com/feshinkof-boop/armorx-toolkit) by feshinkof-boop —
+  protocol research this project builds on.
+* [REA](https://github.com/morluto/rea) and [Ghidra](https://ghidra-sre.org/) for the analysis.
+
+Not affiliated with BIGBIG WON. Product names are trademarks of their owners.
+
+## License
+
+[MIT](LICENSE)
