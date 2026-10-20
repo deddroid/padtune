@@ -242,20 +242,30 @@ pub fn apply(dev: &Device, delta: &DeviceConfig) -> Result<()> {
 }
 
 /// Writes a profile (D7), checks the ACK and verifies by reading it back.
+/// A lost ACK is tolerated when the read-back already matches; otherwise the
+/// write is retried once.
 pub fn write_profile(dev: &Device, profile: &Profile) -> Result<()> {
-    let status = dev.send_blob(&profile.write_frames())?;
-    if status != 0 {
-        return Err(Error::Protocol(format!(
-            "profile write refused (status 0x{status:02x})"
-        )));
+    let want = profile.to_bytes();
+    let mut last = Error::Protocol("profile write failed".into());
+    for _ in 0..2 {
+        match dev.send_blob(&profile.write_frames()) {
+            Ok(0) | Err(Error::Timeout(_)) => {}
+            Ok(status) => {
+                return Err(Error::Protocol(format!(
+                    "profile write refused (status 0x{status:02x})"
+                )));
+            }
+            Err(e) => return Err(e),
+        }
+        match read_profile(dev) {
+            Ok(back) if back.to_bytes() == want => return Ok(()),
+            Ok(_) => {
+                last = Error::Protocol("profile read-back differs from what was written".into())
+            }
+            Err(e) => last = e,
+        }
     }
-    let back = read_profile(dev)?;
-    if back.to_bytes() != profile.to_bytes() {
-        return Err(Error::Protocol(
-            "profile read-back differs from what was written".into(),
-        ));
-    }
-    Ok(())
+    Err(last)
 }
 
 /// Reads one macro slot (D9). Short records come back in one `A5` frame,

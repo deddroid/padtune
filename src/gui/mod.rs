@@ -62,7 +62,10 @@ fn native_options() -> eframe::NativeOptions {
         .with_title("PadTune")
         .with_app_id("padtune")
         .with_inner_size([
-            1060.0,
+            std::env::var("PADTUNE_WINDOW_WIDTH")
+                .ok()
+                .and_then(|w| w.parse().ok())
+                .unwrap_or(1060.0),
             // Taller windows for documentation screenshots.
             std::env::var("PADTUNE_WINDOW_HEIGHT")
                 .ok()
