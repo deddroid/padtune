@@ -25,4 +25,8 @@ ZKM 6, profile `280_v36`).
 - USB cable vs 2.4G dongle detection; idle dongle detection.
 - Tray icon, autostart, single instance; named profiles that send only what
   changed; factory settings.
+- Vibration editor (four motors, min/max strength, presets, preview by
+  clicking a slider); the controller requires max > min.
+- Button remapping to combinations of up to three controller buttons; stick
+  curve presets of your own and "copy to the other stick".
 - udev rule, desktop entry, icons, `install.sh`, AUR packages.
