@@ -30,7 +30,11 @@ jobs:
       - name: Test
         run: cargo test --release
       - name: Build
-        run: cargo build --release --locked
+        shell: bash
+        # No build machine paths in the binaries.
+        run: |
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+          cargo build --release --locked
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |

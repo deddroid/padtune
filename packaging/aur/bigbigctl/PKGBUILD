@@ -24,14 +24,14 @@ build() {
   cd "$pkgname-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  export RUSTFLAGS="--remap-path-prefix=$srcdir=/build"
+  export RUSTFLAGS="--remap-path-prefix=$srcdir=/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
   cargo build --frozen --release
 }
 
 check() {
   cd "$pkgname-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
-  export RUSTFLAGS="--remap-path-prefix=$srcdir=/build"
+  export RUSTFLAGS="--remap-path-prefix=$srcdir=/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
   cargo test --frozen --release
 }
 
