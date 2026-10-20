@@ -106,6 +106,7 @@ padtune monitor 30                # key test: prints every button press
 | `PADTUNE_STATE` | Use another state file (last applied configuration) |
 | `PADTUNE_DEMO=1` | GUI with a built-in Rainbow 2 Pro, no USB access |
 | `PADTUNE_SCREENSHOTS=dir` | Save a screenshot of every tab in every language, then exit |
+| `PADTUNE_TEST_CLOSE_AFTER=s` | Close the window after `s` seconds (tray behaviour tests) |
 
 Settings live in `~/.config/padtune/` (Linux) or `%APPDATA%\padtune\`
 (Windows): `settings.toml` (app preferences), `state.toml` (last

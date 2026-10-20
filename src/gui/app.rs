@@ -937,8 +937,12 @@ impl App {
                         (T::PresetInstant, (30, 30), (30, 40)),
                     ] {
                         if ui.small_button(tr(lang, label)).clicked() {
+                            // A preset is a whole response curve: only the
+                            // dead zones are kept from the current one.
                             c.point_a = a;
                             c.point_b = b;
+                            c.outer = 95;
+                            c.max_out = 100;
                         }
                     }
                 });
@@ -1843,6 +1847,17 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_worker();
         self.sync_strip_with_logo();
+        // Test hook: close the window after N seconds (tray behaviour checks).
+        if let Some(secs) = std::env::var("PADTUNE_TEST_CLOSE_AFTER")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+        {
+            if ctx.input(|i| i.time) > secs {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(200));
+            }
+        }
         if let Some(l) = &self.live
             && let Ok(st) = l.state.lock()
         {

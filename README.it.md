@@ -107,6 +107,7 @@ padtune monitor 30                # test tasti: stampa ogni pressione
 | `PADTUNE_STATE` | Usa un altro file di stato (ultima configurazione applicata) |
 | `PADTUNE_DEMO=1` | GUI con un Rainbow 2 Pro simulato, senza accesso USB |
 | `PADTUNE_SCREENSHOTS=cartella` | Salva uno screenshot di ogni scheda in ogni lingua, poi esce |
+| `PADTUNE_TEST_CLOSE_AFTER=s` | Chiude la finestra dopo `s` secondi (test della barra di sistema) |
 
 Le impostazioni sono in `~/.config/padtune/` (Linux) o `%APPDATA%\padtune\`
 (Windows): `settings.toml` (preferenze dell'app), `state.toml` (ultima
