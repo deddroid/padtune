@@ -209,7 +209,7 @@ pub fn pad(
 
     // Light strip (red → yellow → green, as on the real controller), dimmed by
     // the configured brightness; drawn under the body so it glows at the edge.
-    let alpha = marks.strip.map_or(255, |b| b) as f32 / 255.0;
+    let alpha = f32::from(marks.strip.unwrap_or(255)) / 255.0;
     let strip: Vec<(Pos2, Color32)> = [
         (0.14, 0.20, (255, 40, 40)),
         (0.09, 0.40, (255, 40, 40)),
