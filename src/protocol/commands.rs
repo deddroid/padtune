@@ -18,6 +18,15 @@ pub mod op {
     pub const UUID: u8 = 0xef;
     pub const POLLING: u8 = 0xf6;
     pub const STEP_ACCURACY: u8 = 0xf7;
+    pub const POWER: u8 = 0x04;
+    pub const SAVE: u8 = 0x0e;
+    pub const LED_BRIGHT: u8 = 0x72;
+    pub const LIGHTING_MODE: u8 = 0x73;
+    pub const GAMEPAD_MODE: u8 = 0xd4;
+    pub const DEVICE_MODE_INFO: u8 = 0xe1;
+    pub const LOGO_LED: u8 = 0xf5;
+    pub const TRIGGER_LOCK: u8 = 0xf8;
+    pub const WIRELESS: u8 = 0xfa;
 }
 
 pub fn get_zkm_version() -> [u8; REPORT_LEN] {
@@ -46,6 +55,86 @@ pub fn get_step_accuracy() -> [u8; REPORT_LEN] {
 }
 pub fn get_macro(slot: u8) -> [u8; REPORT_LEN] {
     short(op::GET_MACRO, &[slot])
+}
+
+pub fn get_led_brightness() -> [u8; REPORT_LEN] {
+    short(op::LED_BRIGHT, &[])
+}
+pub fn get_logo_led() -> [u8; REPORT_LEN] {
+    short(op::LOGO_LED, &[])
+}
+pub fn get_power() -> [u8; REPORT_LEN] {
+    short(op::POWER, &[])
+}
+pub fn get_gamepad_mode() -> [u8; REPORT_LEN] {
+    short(op::GAMEPAD_MODE, &[])
+}
+pub fn get_wireless_flag() -> [u8; REPORT_LEN] {
+    short(op::WIRELESS, &[])
+}
+pub fn get_trigger_lock() -> [u8; REPORT_LEN] {
+    short(op::TRIGGER_LOCK, &[])
+}
+pub fn get_device_mode_info() -> [u8; REPORT_LEN] {
+    short(op::DEVICE_MODE_INFO, &[])
+}
+
+/// Polling-rate codes accepted by `F6` (official assistant table).
+pub const POLLING_CODES: [(u8, u32); 4] = [(2, 250), (1, 500), (0, 1000), (3, 2000)];
+
+/// Polling-rate code → Hz.
+pub fn polling_hz(code: u8) -> Option<u32> {
+    POLLING_CODES.iter().find(|(c, _)| *c == code).map(|(_, hz)| *hz)
+}
+
+/// Hz → polling-rate code.
+pub fn polling_code(hz: u32) -> Option<u8> {
+    POLLING_CODES.iter().find(|(_, h)| *h == hz).map(|(c, _)| *c)
+}
+
+/// `SetRateOfReturn`: `A5 05 F6 code sum`.
+pub fn set_polling(code: u8) -> Result<[u8; REPORT_LEN]> {
+    polling_hz(code).ok_or_else(|| Error::Invalid(format!("unknown polling code {code}")))?;
+    Ok(short(op::POLLING, &[code]))
+}
+
+/// `SetLEDBrightRequest`: `A5 05 72 value sum`.
+pub fn set_led_brightness(value: u8) -> [u8; REPORT_LEN] {
+    short(op::LED_BRIGHT, &[value])
+}
+
+/// `SetLogoLED`: three RGB colours (Xbox, Switch, PlayStation modes).
+pub fn set_logo_led(colors: [[u8; 3]; 3]) -> [u8; REPORT_LEN] {
+    let mut payload = [0u8; 9];
+    for (i, c) in colors.iter().enumerate() {
+        payload[i * 3..i * 3 + 3].copy_from_slice(c);
+    }
+    short(op::LOGO_LED, &payload)
+}
+
+/// `Save2Device`: commit the working configuration to flash.
+pub fn save_to_flash() -> [u8; REPORT_LEN] {
+    short(op::SAVE, &[0])
+}
+
+/// Battery/power report (`04`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Power {
+    /// Battery level in percent.
+    pub battery: u8,
+    /// Raw status byte after the level (meaning not yet confirmed; 0 on USB).
+    pub status: u8,
+}
+
+pub fn decode_power(payload: &[u8]) -> Result<Power> {
+    need(payload, 2, "power")?;
+    Ok(Power { battery: payload[0].min(100), status: payload[1] })
+}
+
+/// Logo LED colours from `F5`.
+pub fn decode_logo_led(payload: &[u8]) -> Result<[[u8; 3]; 3]> {
+    need(payload, 9, "logo LED")?;
+    Ok(std::array::from_fn(|i| [payload[i * 3], payload[i * 3 + 1], payload[i * 3 + 2]]))
 }
 
 fn need(payload: &[u8], n: usize, what: &str) -> Result<()> {
@@ -100,11 +189,13 @@ pub struct MacroSlotInfo {
 }
 
 pub fn decode_macro_list(payload: &[u8]) -> Result<Vec<MacroSlotInfo>> {
-    if payload.len() % 4 != 0 || payload.is_empty() {
+    if !payload.len().is_multiple_of(4) || payload.is_empty() {
         return Err(Error::Protocol(format!("macro list has {} bytes", payload.len())));
     }
     Ok(payload
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| MacroSlotInfo {
             crc: u16::from_be_bytes([c[0], c[1]]),
             len: usize::from(u16::from_be_bytes([c[2], c[3]])),
@@ -143,6 +234,30 @@ mod tests {
 
         let zkm = [0xa5, 0x05, 0x0b, 0x36, 0xeb];
         assert_eq!(decode_zkm_version(&payload(&zkm)).unwrap(), b'6');
+    }
+
+    #[test]
+    fn write_commands_match_official_encoders() {
+        // DevMgr.dll: SetRateOfReturn checksum = value - 0x60.
+        assert_eq!(set_polling(1).unwrap()[..5], [0xa5, 0x05, 0xf6, 0x01, 0x01u8.wrapping_sub(0x60)]);
+        assert!(set_polling(9).is_err());
+        // SetLEDBrightRequest checksum = value + 0x1c.
+        assert_eq!(set_led_brightness(0x80)[..5], [0xa5, 0x05, 0x72, 0x80, 0x9c]);
+        // Save2Device is the fixed frame a5 05 0e 00 b8.
+        assert_eq!(save_to_flash()[..5], [0xa5, 0x05, 0x0e, 0x00, 0xb8]);
+        // SetLogoLED checksum = sum(colours) - 0x59.
+        let logo = set_logo_led([[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+        assert_eq!(logo[..3], [0xa5, 0x0d, 0xf5]);
+        assert_eq!(logo[12], 45u8.wrapping_sub(0x59));
+        assert_eq!(polling_code(2000), Some(3));
+    }
+
+    #[test]
+    fn decodes_rainbow2pro_status() {
+        let pw = [0xa5, 0x06, 0x04, 0x64, 0x00, 0x13];
+        assert_eq!(decode_power(&payload(&pw)).unwrap().battery, 100);
+        let logo = [0xa5, 0x0d, 0xf5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xa7];
+        assert_eq!(decode_logo_led(&payload(&logo)).unwrap(), [[0; 3]; 3]);
     }
 
     #[test]

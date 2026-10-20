@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 
 use bigbigctl::actions;
 use bigbigctl::device::{self, Device};
-use bigbigctl::protocol::profile::{SLOT_NAMES, KEY_SLOTS};
+use bigbigctl::protocol::profile::SLOT_NAMES;
 
 #[derive(Parser)]
 #[command(version, about = "Configure BIGBIG WON controllers (Rainbow 2 Pro and family)")]
@@ -85,8 +85,8 @@ fn run(cli: Cli) -> bigbigctl::Result<()> {
                 );
             }
             println!("Turbo mask: 0x{:08x}  speed index {}", p.turbo_mask(), p.turbo_speed());
-            for slot in 0..KEY_SLOTS {
-                if let Some(name) = SLOT_NAMES[slot] {
+            for (slot, name) in SLOT_NAMES.iter().enumerate() {
+                if let Some(name) = name {
                     println!("  {name:6} -> {:?}", p.key(slot));
                 }
             }

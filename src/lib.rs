@@ -5,6 +5,8 @@
 //! without hardware; [`device`] is the thin HID transport on top.
 
 pub mod actions;
+pub mod config;
+pub mod i18n;
 pub mod device;
 pub mod protocol;
 
@@ -30,3 +32,6 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[cfg(feature = "gui")]
+pub mod gui;
