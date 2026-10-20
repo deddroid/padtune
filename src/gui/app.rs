@@ -180,6 +180,7 @@ pub struct App {
     pressed_at: [Option<Instant>; 32],
     idle_dongle: bool,
     macro_slot: usize,
+    shell: std::sync::Arc<super::Shell>,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -239,7 +240,10 @@ fn demo_snapshot() -> Snapshot {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, shell: std::sync::Arc<super::Shell>) -> Self {
+        if let Ok(mut c) = shell.ctx.lock() {
+            *c = Some(cc.egui_ctx.clone());
+        }
         theme::apply(&cc.egui_ctx);
         let settings = Settings::load();
         let shots = std::env::var_os("BIGBIGCTL_SCREENSHOTS").map(|d| {
@@ -280,6 +284,7 @@ impl App {
             pressed_at: [None; 32],
             idle_dongle: false,
             macro_slot: 0,
+            shell,
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -1363,6 +1368,12 @@ impl App {
             ui.label(dim(config::config_dir().display().to_string()));
         });
         if self.settings != before && self.shots.is_none() {
+            if self.settings.autostart != before.autostart
+                && let Err(e) = super::desktop::set_autostart(self.settings.autostart)
+            {
+                self.status = Status::Error(e.to_string());
+                self.settings.autostart = before.autostart;
+            }
             let _ = self.settings.save();
         }
     }
@@ -1432,6 +1443,9 @@ impl App {
 
 impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Ok(mut c) = self.shell.ctx.lock() {
+            *c = None;
+        }
         if let Some(w) = &self.worker {
             w.send(Request::Shutdown);
             // Give the device thread a moment to switch key reports off.
