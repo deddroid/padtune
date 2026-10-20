@@ -16,6 +16,7 @@ use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
 use crate::protocol::macros::{Macro, Step as MacroStep};
 use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
+use crate::protocol::strip::{self, Effect, Strip};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -89,6 +90,7 @@ struct Edit {
     led_brightness: Option<u8>,
     logo_colors: Option<[[u8; 3]; 3]>,
     macros: Vec<Macro>,
+    strip: Option<Strip>,
 }
 
 impl Edit {
@@ -99,6 +101,7 @@ impl Edit {
             led_brightness: s.led_brightness,
             logo_colors: s.logo_colors,
             macros: s.macros.clone(),
+            strip: s.strip.clone(),
         }
     }
 
@@ -113,6 +116,7 @@ impl Edit {
                 .iter()
                 .filter_map(|m| m.encode().ok().map(|r| (m.slot, config::to_hex(&r))))
                 .collect(),
+            strip: self.strip.clone(),
         }
     }
 
@@ -128,6 +132,9 @@ impl Edit {
         }
         if c.logo_colors.is_some() {
             self.logo_colors = c.logo_colors;
+        }
+        if c.strip.is_some() {
+            self.strip = c.strip.clone();
         }
         if let Ok(records) = c.macro_records() {
             for m in records {
@@ -234,6 +241,7 @@ fn demo_snapshot() -> Snapshot {
             ];
             m
         },
+        strip: Some(Strip::default()),
         wireless_flag: Some(1),
         connection: Some(crate::actions::Link::Usb),
     }
@@ -704,6 +712,7 @@ impl App {
             strip,
             light: MODE_LIGHT_XINPUT,
             logo,
+            strip_custom: None,
             profile: None,
             lights_only: false,
         };
@@ -981,6 +990,20 @@ impl App {
                 strip: edit.led_brightness,
                 light: MODE_LIGHT_XINPUT,
                 logo,
+                strip_custom: edit.strip.as_ref().map(|st| {
+                    let side = |v: &Vec<[u8; 3]>| {
+                        v.first()
+                            .map_or(MODE_LIGHT_XINPUT, |c| Color32::from_rgb(c[0], c[1], c[2]))
+                    };
+                    (
+                        side(&st.left),
+                        if st.same {
+                            side(&st.left)
+                        } else {
+                            side(&st.right)
+                        },
+                    )
+                }),
                 profile: None,
                 lights_only: true,
             };
@@ -1067,6 +1090,101 @@ impl App {
                     });
             }
         });
+
+        // ---- custom light strip (opcode 70) -------------------------------
+        ui.add_space(10.0);
+        let follows_before = self.settings.strip_follows_logo;
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr(lang, T::StripTitle)).strong());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button(tr(lang, T::FactoryReset)).clicked() {
+                        edit.strip = Some(Strip::default());
+                        self.settings.strip_follows_logo = false;
+                    }
+                });
+            });
+            ui.label(dim(tr(lang, T::StripHint)));
+            ui.checkbox(
+                &mut self.settings.strip_follows_logo,
+                tr(lang, T::StripFollowsLogo),
+            );
+            let locked = self.settings.strip_follows_logo;
+            let Some(st) = &mut edit.strip else {
+                ui.horizontal(|ui| {
+                    ui.label(dim(tr(lang, T::StripUnknown)));
+                    if ui.button(tr(lang, T::StripCustomize)).clicked() {
+                        edit.strip = Some(Strip::default());
+                    }
+                });
+                return;
+            };
+            ui.add_enabled_ui(!locked, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(tr(lang, T::StripEffect));
+                    for (e, t) in Effect::ALL.into_iter().zip([
+                        T::StripStatic,
+                        T::StripBreathing,
+                        T::StripGradient,
+                        T::StripFlicker,
+                    ]) {
+                        ui.selectable_value(&mut st.effect, e, tr(lang, t));
+                    }
+                });
+                egui::Grid::new("strip")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(tr(lang, T::StripSpeed)).color(TEXT_DIM));
+                        ui.add_enabled(
+                            st.effect != Effect::Static,
+                            egui::Slider::new(&mut st.speed, 0..=255),
+                        );
+                        ui.end_row();
+                        ui.label(RichText::new(tr(lang, T::Brightness)).color(TEXT_DIM));
+                        ui.add(egui::Slider::new(&mut st.bright, strip::MIN_BRIGHT..=255));
+                        ui.end_row();
+                    });
+                ui.checkbox(&mut st.same, tr(lang, T::StripSame));
+                let sides: &[(bool, T)] = if st.same {
+                    &[(false, T::StripColors)]
+                } else {
+                    &[(false, T::StripLeft), (true, T::StripRight)]
+                };
+                for &(right, label) in sides {
+                    let list = if right { &mut st.right } else { &mut st.left };
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(tr(lang, label)).color(TEXT_DIM));
+                        let mut remove = None;
+                        for (i, c) in list.iter_mut().enumerate() {
+                            ui.color_edit_button_srgb(c);
+                            if list_len_gt1(i) && ui.small_button("✕").clicked() {
+                                remove = Some(i);
+                            }
+                        }
+                        if let Some(i) = remove
+                            && list.len() > 1
+                        {
+                            list.remove(i);
+                        }
+                        if list.len() < strip::MAX_COLORS && ui.small_button("+").clicked() {
+                            let last = *list.last().unwrap_or(&[255, 255, 255]);
+                            list.push(last);
+                        }
+                    });
+                }
+                if matches!(st.effect, Effect::Breathing | Effect::Flicker) && st.left.len() < 2 {
+                    ui.label(
+                        RichText::new(tr(lang, T::StripTwoColors))
+                            .small()
+                            .color(WARN),
+                    );
+                }
+            });
+        });
+        if self.settings.strip_follows_logo != follows_before && self.shots.is_none() {
+            let _ = self.settings.save();
+        }
     }
 
     fn page_macros(&mut self, ui: &mut egui::Ui) {
@@ -1395,6 +1513,21 @@ impl App {
         }
     }
 
+    /// With "strip follows logo", keep the strip a solid copy of the HOME
+    /// logo colour (or of the mode colour when the logo follows the mode).
+    fn sync_strip_with_logo(&mut self) {
+        if !self.settings.strip_follows_logo {
+            return;
+        }
+        let Some(e) = &mut self.edit else { return };
+        let color = logo_color(e.logo_colors).unwrap_or(MODE_LIGHT_XINPUT);
+        let bright = e.strip.as_ref().map_or(255, |s| s.bright);
+        let want = Strip::solid([color.r(), color.g(), color.b()], bright);
+        if e.strip.as_ref() != Some(&want) {
+            e.strip = Some(want);
+        }
+    }
+
     fn marker(&self) -> String {
         self.snap
             .as_ref()
@@ -1456,6 +1589,7 @@ impl eframe::App for App {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_worker();
+        self.sync_strip_with_logo();
         if let Some(l) = &self.live
             && let Ok(st) = l.lock()
         {
@@ -1516,6 +1650,11 @@ fn logo_color(colors: Option<[[u8; 3]; 3]>) -> Option<Color32> {
         .map(|c| c[crate::protocol::commands::LOGO_SLOT_XINPUT])
         .filter(|c| *c != [0; 3])
         .map(|[r, g, b]| Color32::from_rgb(r, g, b))
+}
+
+/// Every colour after the first can be removed (a side needs at least one).
+fn list_len_gt1(index: usize) -> bool {
+    index > 0
 }
 
 fn macro_key_name(k: u8) -> &'static str {

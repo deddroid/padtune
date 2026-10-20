@@ -60,6 +60,24 @@ enum SetCmd {
         #[arg(long, num_args = 2, value_names = ["SLOT1", "SLOT2"])]
         other: Option<Vec<String>>,
     },
+    /// Light-strip effect, shown in "custom light" mode (double-click FN).
+    Strip {
+        /// static, breathing, gradient or flicker
+        #[arg(long, value_enum, default_value = "gradient")]
+        effect: StripEffect,
+        /// Colours (RRGGBB, comma separated, up to 7) for both sides.
+        #[arg(long, value_delimiter = ',', default_value = "ff0000,ffff00,00ff00")]
+        colors: Vec<String>,
+        /// Different colours for the right side.
+        #[arg(long, value_delimiter = ',')]
+        right: Option<Vec<String>>,
+        /// 0 (slow) - 255 (fast).
+        #[arg(long, default_value_t = 255)]
+        speed: u8,
+        /// 50 - 255.
+        #[arg(long, default_value_t = 255)]
+        bright: u8,
+    },
     /// Trigger range (profile write).
     Trigger {
         /// left or right
@@ -74,6 +92,14 @@ enum SetCmd {
         #[arg(long)]
         hair: Option<bool>,
     },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum StripEffect {
+    Static,
+    Breathing,
+    Gradient,
+    Flicker,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -183,6 +209,34 @@ fn run(cli: Cli) -> padtune::Result<()> {
                     )
                 }
                 SetCmd::Brightness { value } => delta.led_brightness = Some(value),
+                SetCmd::Strip {
+                    effect,
+                    colors,
+                    right,
+                    speed,
+                    bright,
+                } => {
+                    use padtune::protocol::strip::{Effect, Strip};
+                    let parse = |v: &[String]| {
+                        v.iter()
+                            .map(|c| parse_rgb(c))
+                            .collect::<padtune::Result<Vec<_>>>()
+                    };
+                    let strip = Strip {
+                        effect: match effect {
+                            StripEffect::Static => Effect::Static,
+                            StripEffect::Breathing => Effect::Breathing,
+                            StripEffect::Gradient => Effect::Gradient,
+                            StripEffect::Flicker => Effect::Flicker,
+                        },
+                        speed,
+                        bright,
+                        same: right.is_none(),
+                        left: parse(&colors)?,
+                        right: parse(right.as_deref().unwrap_or(&colors))?,
+                    };
+                    delta.strip = Some(strip);
+                }
                 SetCmd::Trigger {
                     side,
                     start,
@@ -212,7 +266,20 @@ fn run(cli: Cli) -> padtune::Result<()> {
                 }
             }
             actions::apply(&dev, &delta)?;
-            println!("OK (verified by read-back)");
+            if let Some(strip) = &delta.strip {
+                // The strip cannot be read back: remember it for the GUI.
+                if let Ok(uuid) = dev
+                    .request(&padtune::protocol::commands::get_uuid())
+                    .and_then(|p| padtune::protocol::commands::decode_uuid(&p))
+                {
+                    let mut state = padtune::config::State::load();
+                    state.devices.entry(uuid).or_default().strip = Some(strip.clone());
+                    let _ = state.save();
+                }
+                println!("OK (acknowledged by the controller; visible in custom-light mode)");
+            } else {
+                println!("OK (verified by read-back)");
+            }
         }
         Cmd::Monitor { seconds } => {
             use padtune::protocol::commands::{self, decode_key_report, op};

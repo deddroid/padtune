@@ -1,6 +1,7 @@
 # Rainbow 2 Pro: custom light-strip colour/effect (RE of the official Android app, 2026-10-20)
 
-Status: **recovered statically, NOT yet tested on hardware.** Nothing was sent to the controller.
+Status: **recovered statically and VERIFIED on hardware** (2026-10-20, USB cable, user approved). See
+"Hardware test results" below.
 
 Summary: the app sets the "custom light" strip with opcode **0x70** (the PC Tool calls the same opcode
 `CDeviceBBwon::SetLED`), one command per side (left/right):
@@ -90,7 +91,7 @@ Payload (9-byte header + colours):
 | 3 | zone: **1 = left, 2 = right** (3 for any other LightSelect index; none exists) | `LightSelect.index + 1` @ 0x8353b4.. |
 | 4 | mode (1/2/3/5) | arg |
 | 5 | `00` | constant @ 0x8355fc |
-| 6 | speed byte = `(255 - speed) / 10 + 10` (integer division): 255→0x0A (fastest?), 128→0x16, 0→0x23 | @ 0x835604..0x83560c; Ghidra: `(0xff - lVar6) / 10 + 10` |
+| 6 | speed byte = `(255 - speed) / 10 + 10` (integer division): 255→0x0A (fastest, verified), 128→0x16 (~2 s breathing cycle), 0→0x23 | @ 0x835604..0x83560c; Ghidra: `(0xff - lVar6) / 10 + 10` |
 | 7 | bright (50..255) | arg |
 | 8 | `FF` | constant @ 0x835830 |
 | 9.. | R,G,B per colour | `changeLightColorList` @ 0x836970 (r=+7, g=+0xf, b=+0x17) |
@@ -173,9 +174,46 @@ Rainbow 3 also uses 0x73 for the enable flag, so on the Rainbow 2 Pro, 0x73 may 
 - Exact visual meaning: **medium**. Speed direction (larger byte = slower?), whether static uses only the
   first colour, and whether the custom mode must be selected (FN double-click) for the change to show are all open.
   Persistence without `0E` is unknown (D7 persisted without it).
-- ACK format: **low** (inferred).
+- ACK format: **confirmed** on hardware (`A5 05 70 00 1A`). Persistence without `0E`: **confirmed**.
+  Static and gradient modes on both zones: **confirmed**. Breathing, flicker, speed direction (smaller byte =
+  faster), brightness (50 dim) and 7-colour lists: **confirmed**.
 
-## Proposed first hardware test (needs the user's OK; the main session sends)
+## Hardware test results (2026-10-20, cable link, FA = 01, `/dev/hidraw12`)
+
+Frames were written to hidraw as 64-byte reports, zero-padded with a leading report ID 0. The script is
+`lighttest.py` in the side session's scratchpad: it checks sum8 before sending and filters the `a5 09 0d` heartbeat.
+
+| step | TX | RX | user saw |
+|---|---|---|---|
+| 1 | `A5 10 70 00 00 00 01 01 00 0A FF FF 00 00 FF 2E` (left, static blue) | `A5 05 70 00 1A` | left half blue. The firmware blends the colours along the strip: dark blue top-left, light blue bottom-left, mixing with green in the centre, light green bottom-right, dark green top-right |
+| 2 | `A5 10 70 00 00 00 02 01 00 0A FF FF 00 00 FF 2F` (right, static blue) | `A5 05 70 00 1A` | whole strip intense blue |
+| 3 | `A5 16 70 …01 03 00 0A FF FF FF0000 FFFF00 00FF00 33` + `…02… 34` (gradient R,Y,G both sides) | `A5 05 70 00 1A` ×2 | gradient cycling red → yellow → green (like the factory look) |
+| 4 | power-off / power-on, **no `0E` sent** | – | gradient still there: **0x70 persists without Save2Device** |
+
+Confirmed: opcode 0x70, the 9-byte header, zone 1/2 = left/right, mode 1 (static) and 3 (gradient), sum8, the
+single short A5 frame over USB (no A4 fragmentation needed for 3 colours), and the ACK `A5 05 70 00 1A`.
+Second series (same day, after the power cycle; config interface was now `/dev/hidraw14`, both zones each time,
+every frame ACKed `A5 05 70 00 1A`):
+
+| test | payload (zone byte 01/02) | user saw |
+|---|---|---|
+| breathing, 1 colour, spd 0x0A | `…02 00 0A FF FF 0000FF` | looked static blue |
+| breathing, 1 colour, spd 0x23 | `…02 00 23 FF FF 0000FF` | breathed briefly, then **stayed static** |
+| breathing, blue+red, spd 0x16 | `…02 00 16 FF FF 0000FF FF0000` | breathes continuously alternating blue/red, ~2 s per cycle |
+| breathing, blue+red, spd 0x0A | same with `0A` | **faster** → smaller speed byte = faster (app speed 255 = fastest) |
+| flicker, blue+red, spd 0x16 | `…05 00 16 FF FF 0000FF FF0000` | blue → off → red → off, ~1.5 s per colour |
+| static blue, bright 50 | `…01 00 0A 32 FF 0000FF` | whole strip dim blue |
+| gradient, 7 colours (R, orange, Y, G, cyan, B, magenta), spd 0x16 | 34-byte frame `A5 22 70 …` | all 7 colours seen cycling |
+| restore | gradient R,Y,G spd 0x0A bright FF (same as step 3) | – |
+
+Notes for the GUI:
+- Breathing (and probably flicker) needs **≥ 2 colours** to animate continuously. With 1 colour the firmware
+  breathes once and then holds the colour.
+- 7 colours in a single 34-byte A5 frame work over USB.
+
+Still untested: the dongle link and `A5 04 70 19` (SetLEDShow).
+
+## Proposed first hardware test (as planned before the test; kept for reference)
 
 Preconditions: USB cable link (FA = 01), strip set to **custom light** mode with FN double-click (it now shows the
 red/yellow/green gradient), brightness 72 = ff. Do not send 0E, 1A or 1B.

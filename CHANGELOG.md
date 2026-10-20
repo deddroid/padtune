@@ -17,6 +17,9 @@ ZKM 6, profile `280_v36`).
   `set polling|brightness|logo|trigger`.
 - Profile, macro, polling, light-strip brightness and HOME logo colour writes,
   each verified by reading it back.
+- Light-strip effect (opcode `70`, decoded from the official Android app):
+  static, breathing, gradient, flicker, speed, brightness, up to 7 colours per
+  side, optional sync with the HOME logo colour; `padtune set strip`.
 - Live input: sticks and triggers through the OS gamepad API, every button
   through the controller's key test.
 - USB cable vs 2.4G dongle detection; idle dongle detection.
