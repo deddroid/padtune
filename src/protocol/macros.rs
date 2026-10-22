@@ -55,7 +55,8 @@ pub struct Macro {
 /// Verified on hardware: a stick rotation recorded on the controller sits in
 /// bytes 8..10 of each step, quantised to eight directions.
 pub const LEFT_STICK: usize = 2;
-/// Index of the right stick's X axis (assumed: the remaining two bytes).
+/// Index of the right stick's X axis (bytes 6..8), also verified on hardware
+/// with a recording that moved the left stick, then the right, then both.
 pub const RIGHT_STICK: usize = 0;
 
 /// Stick position in a macro step: none or one of eight directions.

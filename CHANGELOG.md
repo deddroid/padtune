@@ -1,10 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.1] - 2026-10-22
 
 ### Added
 - Macro editor shows and edits the left/right stick direction of every step
-  (8 directions), as recorded by the controller; 0 ms steps allowed.
+  (8 directions), as recorded by the controller (both sticks verified);
+  0 ms steps allowed.
 - Verified on hardware: long macros (56 steps, fragmented D9/D8) read and write.
 
 All notable changes are listed here. The project follows
