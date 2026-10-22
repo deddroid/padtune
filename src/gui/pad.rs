@@ -172,6 +172,20 @@ const SPOTS: &[Spot] = &[
         kind: Kind::Func,
         label: "Prof",
     },
+    // M3/M4 sit on the top edge between the triggers (front view: M3 left,
+    // M4 right, mirroring the manual's rear view "M4 … M3").
+    Spot {
+        slot: 25,
+        at: (0.42, 0.05),
+        kind: Kind::Back,
+        label: "M3",
+    },
+    Spot {
+        slot: 26,
+        at: (0.58, 0.05),
+        kind: Kind::Back,
+        label: "M4",
+    },
     Spot {
         slot: 23,
         at: (0.40, 0.95),
