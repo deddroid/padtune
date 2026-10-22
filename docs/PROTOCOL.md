@@ -133,7 +133,7 @@ header: CRC(2) len(2) 00 slot runkey p7 p8 p9
         p7..p9 = 01 00 0d when recorded on the controller (meaning unknown, preserved)
 step:   b0 = duration low nibble <<4 | marker bit0, b1 = duration high byte
         duration = 12 bits × 8 ms; inputs u32 BE (key-slot bits); 4 signed analog bytes
-        analog = [RX, RY, LX, LY]: left stick verified (bytes 8..10), right assumed;
+        analog = [RX, RY, LX, LY]: both sticks verified on recorded macros;
         recorded positions are 8 directions at full tilt: (0,127) up … (90,90) up-right
 ```
 
