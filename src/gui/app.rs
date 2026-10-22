@@ -1958,7 +1958,8 @@ fn max_polling_hz(marker: &str) -> u32 {
     if marker == "ZJ-C1pro" { 1000 } else { 2000 }
 }
 
-/// Key slots shown for a model (hides unused/reserved slots).
+/// Key slots shown for a model (hides unused/reserved slots and the front
+/// function keys). The Rainbow 2 Pro has all four back/top keys M1–M4.
 /// The lights to draw, computed once from the editor state for every tab:
 /// light-strip brightness, the custom strip effect when PadTune knows it
 /// (otherwise the mode colour) and the HOME logo colour.
@@ -2136,16 +2137,11 @@ fn feature_body(ui: &mut egui::Ui, lang: Lang, f: &Feature) {
     }
 }
 
-fn visible_slots(marker: &str) -> Vec<usize> {
+fn visible_slots(_marker: &str) -> Vec<usize> {
     (0..SLOT_NAMES.len())
         .filter(|&i| SLOT_NAMES[i].is_some())
         // Front function keys are not remappable.
         .filter(|i| !crate::protocol::profile::FUNCTION_SLOTS.contains(i))
-        .filter(|&i| {
-            let name = SLOT_NAMES[i].unwrap_or_default();
-            // Rainbow 2 Pro has only M1/M2 at the back.
-            !(marker == "ZJ-C1pro" && (name == "M3" || name == "M4"))
-        })
         .collect()
 }
 

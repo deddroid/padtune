@@ -119,7 +119,7 @@ strings! {
     BrightnessHint => "Applies to every light mode (0 = strip off). The logo and the profile LEDs are not affected.", "Vale per tutte le modalità luce (0 = striscia spenta). Logo e LED dei profili non cambiano.";
     Connections => "Connections", "Connessioni";
     KeyTest => "Key test", "Test tasti";
-    KeyTestOff => "Shows every button (M1, M2, front keys, FN). Pauses the gamepad while on. Share still sends its keyboard shortcut (the desktop may take a screenshot).", "Mostra tutti i tasti (M1, M2, frontali, FN). Mentre è attivo il gamepad è in pausa. Share invia comunque la sua scorciatoia da tastiera (il desktop può fare uno screenshot).";
+    KeyTestOff => "Shows every button (M1–M4, front keys, FN). Pauses the gamepad while on. Share still sends its keyboard shortcut (the desktop may take a screenshot).", "Mostra tutti i tasti (M1–M4, frontali, FN). Mentre è attivo il gamepad è in pausa. Share invia comunque la sua scorciatoia da tastiera (il desktop può fare uno screenshot).";
     KeyTestOn => "Gamepad paused — sticks are not shown. Turns off when you leave this tab.", "Gamepad in pausa — gli stick non vengono mostrati. Si spegne lasciando questa scheda.";
     ModeLightHint => "In “mode light” (default) the strip and the Home light share the mode colour: green in XInput, red in Switch. Double-click FN cycles mode light / custom light / off.", "In “luce modalità” (predefinita) striscia e luce Home hanno il colore della modalità: verde in XInput, rosso in Switch. Doppio clic su FN alterna luce modalità / personalizzata / spenta.";
     NotConnected => "not connected", "non collegato";
@@ -131,7 +131,7 @@ strings! {
     ModeSwitch => "Switch", "Switch";
     ModePs => "PlayStation", "PlayStation";
     MacroSlot => "Macro", "Macro";
-    MacroHint => "Each macro plays when its back button is pressed. You can also record one on the controller: hold MACRO + M1/M2 for 3 s, press the buttons, then MACRO.", "Ogni macro parte premendo il suo tasto posteriore. Puoi anche registrarla dal controller: tieni MACRO + M1/M2 per 3 s, premi i tasti, poi MACRO.";
+    MacroHint => "Each macro plays when its back button is pressed. You can also record one on the controller: hold MACRO + M1–M4 for 3 s, press the buttons, then MACRO.", "Ogni macro parte premendo il suo tasto posteriore. Puoi anche registrarla dal controller: tieni MACRO + M1–M4 per 3 s, premi i tasti, poi MACRO.";
     MacroBoundTo => "Played by", "Avviata da";
     MacroClear => "Clear macro", "Cancella macro";
     MacroDuration => "Duration", "Durata";
@@ -227,11 +227,11 @@ strings! {
     FTurboD => "Repeats A/B/X/Y, D-pad, LB/RB/LT/RT or M1–M4 while held; the FN light blinks at the turbo rate. Clear one: hold the button and double-click TURBO. Clear all: double-click TURBO. FN + ← cycles 5 / 10 / 20 Hz.", "Ripete A/B/X/Y, croce, LB/RB/LT/RT o M1–M4 finché sono premuti; la luce FN lampeggia alla frequenza del turbo. Cancella uno: tieni il tasto e doppio clic su TURBO. Cancella tutti: doppio clic su TURBO. FN + ← cambia 5 / 10 / 20 Hz.";
     FTurboC => "Hold TURBO + the button", "Tieni TURBO + il tasto";
     FMapT => "Back-button mapping", "Mappatura tasti posteriori";
-    FMapD => "Makes a back button copy another button without the app; the FN light breathes, then blinks twice when done. Clear one: hold M1/M2 and double-click Mapping. Clear all: double-click Mapping.", "Fa copiare a un tasto posteriore un altro tasto senza app; la luce FN pulsa, poi lampeggia due volte a fine operazione. Cancella uno: tieni M1/M2 e doppio clic su Mapping. Cancella tutti: doppio clic su Mapping.";
-    FMapC => "Mapping + M1/M2, then the button to copy", "Mapping + M1/M2, poi il tasto da copiare";
+    FMapD => "Makes a back button copy another button without the app; the FN light breathes, then blinks twice when done. Clear one: hold M1–M4 and double-click Mapping. Clear all: double-click Mapping.", "Fa copiare a un tasto posteriore un altro tasto senza app; la luce FN pulsa, poi lampeggia due volte a fine operazione. Cancella uno: tieni M1–M4 e doppio clic su Mapping. Cancella tutti: doppio clic su Mapping.";
+    FMapC => "Mapping + M1–M4, then the button to copy", "Mapping + M1–M4, poi il tasto da copiare";
     FMacroT => "Macro recording", "Registrazione macro";
-    FMacroD => "Records a sequence on a back button: press the keys, then MACRO to finish. FN breathes while recording and blinks slowly while the macro plays. Clear one: press M1/M2 and double-click MACRO. Clear all: double-click MACRO.", "Registra una sequenza su un tasto posteriore: premi i tasti, poi MACRO per terminare. FN pulsa durante la registrazione e lampeggia lenta durante la riproduzione. Cancella una: premi M1/M2 e doppio clic su MACRO. Cancella tutte: doppio clic su MACRO.";
-    FMacroC => "Hold MACRO + M1/M2 for 3 s", "Tieni MACRO + M1/M2 per 3 s";
+    FMacroD => "Records a sequence on a back button: press the keys, then MACRO to finish. FN breathes while recording and blinks slowly while the macro plays. Clear one: press M1–M4 and double-click MACRO. Clear all: double-click MACRO.", "Registra una sequenza su un tasto posteriore: premi i tasti, poi MACRO per terminare. FN pulsa durante la registrazione e lampeggia lenta durante la riproduzione. Cancella una: premi M1–M4 e doppio clic su MACRO. Cancella tutte: doppio clic su MACRO.";
+    FMacroC => "Hold MACRO + M1–M4 for 3 s", "Tieni MACRO + M1–M4 per 3 s";
     FProfileT => "On-board profiles", "Profili integrati";
     FProfileD => "Four configurations stored in the controller; in XInput mode the white LEDs show the active one (top = 1). Holding the key for 3 s clears the current configuration.", "Quattro configurazioni salvate nel controller; in modalità XInput i LED bianchi indicano quella attiva (in alto = 1). Tenendo premuto 3 s si cancella la configurazione corrente.";
     FProfileC => "Press Configuration", "Premi Configuration";
