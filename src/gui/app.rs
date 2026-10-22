@@ -14,7 +14,7 @@ use crate::config::{self, DeviceConfig, NamedProfile, Settings};
 use crate::i18n::{Lang, T, tr};
 use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
-use crate::protocol::macros::{Macro, Step as MacroStep};
+use crate::protocol::macros::{LEFT_STICK, Macro, RIGHT_STICK, Step as MacroStep, StickDir};
 use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
 use crate::protocol::profile::{NO_KEY, VIBRATION_MOTORS, Vibration};
 use crate::protocol::strip::{self, Effect, Strip};
@@ -247,6 +247,12 @@ fn demo_snapshot() -> Snapshot {
                     marker: false,
                     inputs: 1 << 1,
                     analog: [0; 4],
+                },
+                MacroStep {
+                    duration_ms: 240,
+                    marker: false,
+                    inputs: 0,
+                    analog: [0, 0, -91, 90],
                 },
             ];
             m
@@ -1508,13 +1514,14 @@ impl App {
             let mut remove = None;
             let mut swap = None;
             egui::Grid::new("steps")
-                .num_columns(4)
+                .num_columns(5)
                 .striped(true)
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
                     ui.label(dim("#"));
                     ui.label(dim(tr(lang, T::MacroDuration)));
                     ui.label(dim(tr(lang, T::MacroButtons)));
+                    ui.label(dim(tr(lang, T::MacroSticks)));
                     ui.label("");
                     ui.end_row();
                     let n = m.steps.len();
@@ -1522,7 +1529,7 @@ impl App {
                         ui.label(RichText::new(format!("{}", i + 1)).monospace());
                         ui.add(
                             egui::DragValue::new(&mut st.duration_ms)
-                                .range(8..=32_760)
+                                .range(0..=32_760)
                                 .speed(8.0)
                                 .suffix(" ms"),
                         );
@@ -1546,7 +1553,9 @@ impl App {
                                     }
                                 }
                             }
-                            if !any {
+                            let sticks_idle = st.stick(LEFT_STICK) == StickDir::Center
+                                && st.stick(RIGHT_STICK) == StickDir::Center;
+                            if !any && sticks_idle {
                                 ui.label(dim(tr(lang, T::MacroPause)));
                             }
                             egui::ComboBox::from_id_salt(("add", i))
@@ -1566,6 +1575,37 @@ impl App {
                                         }
                                     }
                                 });
+                        });
+                        // Left and right stick direction in this step.
+                        ui.horizontal(|ui| {
+                            for (axis, label) in [(LEFT_STICK, "L"), (RIGHT_STICK, "R")] {
+                                let cur = st.stick(axis);
+                                let text = match cur {
+                                    StickDir::Center => format!("{label} ·"),
+                                    StickDir::Other(x, y) => format!("{label} ∗ {x},{y}"),
+                                    d => format!("{label} {}", d.arrow()),
+                                };
+                                let col = if cur == StickDir::Center {
+                                    TEXT_DIM
+                                } else {
+                                    OK
+                                };
+                                egui::ComboBox::from_id_salt(("stick", i, axis))
+                                    .selected_text(RichText::new(text).color(col))
+                                    .width(64.0)
+                                    .show_ui(ui, |ui| {
+                                        for d in StickDir::ALL {
+                                            let name = if d == StickDir::Center {
+                                                tr(lang, T::StickNeutral).to_string()
+                                            } else {
+                                                d.arrow().to_string()
+                                            };
+                                            if ui.selectable_label(cur == d, name).clicked() {
+                                                st.set_stick(axis, d);
+                                            }
+                                        }
+                                    });
+                            }
                         });
                         ui.horizontal(|ui| {
                             if ui
@@ -1980,6 +2020,9 @@ fn macro_timeline(ui: &mut egui::Ui, m: &Macro) {
         );
         if s.inputs != 0 {
             painter.rect_filled(rect, 3.0, ACCENT);
+        } else if s.analog != [0; 4] {
+            // Stick movement only.
+            painter.rect_filled(rect, 3.0, OK.gamma_multiply(0.7));
         }
         x += w;
     }

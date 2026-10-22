@@ -137,6 +137,8 @@ strings! {
     MacroDuration => "Duration", "Durata";
     MacroButtons => "Buttons held", "Tasti premuti";
     MacroPause => "pause", "pausa";
+    MacroSticks => "Sticks", "Stick";
+    StickNeutral => "· neutral", "· a riposo";
     MacroAddPress => "+ Step", "+ Passo";
     MacroAddPause => "+ Pause", "+ Pausa";
     FactoryReset => "Factory default", "Valori di fabbrica";
