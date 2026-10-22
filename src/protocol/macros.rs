@@ -51,6 +51,95 @@ pub struct Macro {
     pub reserved: u8,
 }
 
+/// Index in [`Step::analog`] of the left stick's X axis (Y follows).
+/// Verified on hardware: a stick rotation recorded on the controller sits in
+/// bytes 8..10 of each step, quantised to eight directions.
+pub const LEFT_STICK: usize = 2;
+/// Index of the right stick's X axis (assumed: the remaining two bytes).
+pub const RIGHT_STICK: usize = 0;
+
+/// Stick position in a macro step: none or one of eight directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StickDir {
+    Center,
+    Up,
+    UpRight,
+    Right,
+    DownRight,
+    Down,
+    DownLeft,
+    Left,
+    UpLeft,
+    /// Any other position (kept as recorded).
+    Other(i8, i8),
+}
+
+impl StickDir {
+    pub const ALL: [StickDir; 9] = [
+        StickDir::Center,
+        StickDir::Up,
+        StickDir::UpRight,
+        StickDir::Right,
+        StickDir::DownRight,
+        StickDir::Down,
+        StickDir::DownLeft,
+        StickDir::Left,
+        StickDir::UpLeft,
+    ];
+
+    /// Axis values the controller itself records (full tilt; diagonals 90).
+    pub fn axes(self) -> (i8, i8) {
+        match self {
+            StickDir::Center => (0, 0),
+            StickDir::Up => (0, 127),
+            StickDir::UpRight => (90, 90),
+            StickDir::Right => (127, 0),
+            StickDir::DownRight => (90, -91),
+            StickDir::Down => (0, -128),
+            StickDir::DownLeft => (-91, -91),
+            StickDir::Left => (-128, 0),
+            StickDir::UpLeft => (-91, 90),
+            StickDir::Other(x, y) => (x, y),
+        }
+    }
+
+    pub fn from_axes(x: i8, y: i8) -> Self {
+        StickDir::ALL
+            .into_iter()
+            .find(|d| d.axes() == (x, y))
+            .unwrap_or(StickDir::Other(x, y))
+    }
+
+    /// Arrow symbol for the UI.
+    pub fn arrow(self) -> &'static str {
+        match self {
+            StickDir::Center => "·",
+            StickDir::Up => "↑",
+            StickDir::UpRight => "↗",
+            StickDir::Right => "→",
+            StickDir::DownRight => "↘",
+            StickDir::Down => "↓",
+            StickDir::DownLeft => "↙",
+            StickDir::Left => "←",
+            StickDir::UpLeft => "↖",
+            StickDir::Other(..) => "∗",
+        }
+    }
+}
+
+impl Step {
+    /// Position of a stick (`LEFT_STICK` or `RIGHT_STICK`).
+    pub fn stick(&self, axis: usize) -> StickDir {
+        StickDir::from_axes(self.analog[axis], self.analog[axis + 1])
+    }
+
+    pub fn set_stick(&mut self, axis: usize, dir: StickDir) {
+        let (x, y) = dir.axes();
+        self.analog[axis] = x;
+        self.analog[axis + 1] = y;
+    }
+}
+
 impl Macro {
     /// An empty, unbound slot (as found on a factory controller).
     pub fn empty(slot: u8) -> Self {
@@ -211,6 +300,29 @@ mod tests {
         let frames = m.write_frames().unwrap();
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0][..5], [0xa4, 36, 0xd8, 0x01, 0x01]);
+    }
+
+    #[test]
+    fn stick_directions_match_controller_recording() {
+        // Values from a left-stick rotation recorded on a Rainbow 2 Pro.
+        for (x, y, d) in [
+            (0, 127, StickDir::Up),
+            (-91, 90, StickDir::UpLeft),
+            (-128, 0, StickDir::Left),
+            (-91, -91, StickDir::DownLeft),
+            (0, -128, StickDir::Down),
+            (90, -91, StickDir::DownRight),
+            (127, 0, StickDir::Right),
+            (90, 90, StickDir::UpRight),
+        ] {
+            assert_eq!(StickDir::from_axes(x, y), d);
+            assert_eq!(d.axes(), (x, y));
+        }
+        let mut s = Step::default();
+        s.set_stick(LEFT_STICK, StickDir::UpLeft);
+        assert_eq!(s.analog, [0, 0, -91, 90]);
+        assert_eq!(s.stick(RIGHT_STICK), StickDir::Center);
+        assert_eq!(StickDir::from_axes(5, 5), StickDir::Other(5, 5));
     }
 
     #[test]
