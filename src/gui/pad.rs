@@ -173,7 +173,8 @@ const SPOTS: &[Spot] = &[
         label: "Prof",
     },
     // M3/M4 sit on the top edge between the triggers (front view: M3 left,
-    // M4 right, mirroring the manual's rear view "M4 … M3").
+    // M4 right, mirroring the manual's rear view "M4 … M3"; bits and
+    // positions verified on hardware).
     Spot {
         slot: 25,
         at: (0.42, 0.05),
