@@ -1,10 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.2] - 2026-10-22
 
 ### Fixed
 - Rainbow 2 Pro: the M3 and M4 keys (top edge, between LT and RT) are shown,
-  remappable, usable with turbo and as macro keys.
+  remappable, usable with turbo and as macro keys. Verified on hardware: M3 is
+  key bit 25 (left), M4 is bit 26 (right).
 
 ## [0.1.1] - 2026-10-22
 
