@@ -201,16 +201,7 @@ pub struct Profile {
 impl Profile {
     /// Parses a profile blob and checks its declared length and CRC.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < 4 {
-            return Err(Error::Protocol("profile too short".into()));
-        }
-        let declared = usize::from(u16::from_be_bytes([bytes[2], bytes[3]]));
-        if declared != bytes.len() {
-            return Err(Error::Protocol(format!(
-                "profile declares {declared} bytes but has {}",
-                bytes.len()
-            )));
-        }
+        let declared = crc::check_length(bytes, "profile")?;
         let layout = LAYOUTS
             .iter()
             .copied()
@@ -218,11 +209,7 @@ impl Profile {
             .ok_or_else(|| {
                 Error::Protocol(format!("unsupported profile layout ({declared} bytes)"))
             })?;
-        let stored = crc::stored_crc(bytes).unwrap_or_default();
-        let computed = crc::blob_crc(bytes);
-        if stored != computed {
-            return Err(Error::Crc { stored, computed });
-        }
+        crc::check_crc(bytes)?;
         Ok(Self {
             raw: bytes.to_vec(),
             layout,

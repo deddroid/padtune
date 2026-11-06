@@ -83,7 +83,15 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
         }
     };
     loop {
-        match rx.recv_timeout(Duration::from_millis(15)) {
+        // Tick fast only while live key reports must be drained; otherwise an
+        // idle tick is plenty (battery/hot-plug polls are gated to 3 s below,
+        // and a request wakes the loop immediately regardless of the tick).
+        let tick = if keys_wanted {
+            Duration::from_millis(15)
+        } else {
+            Duration::from_millis(200)
+        };
+        match rx.recv_timeout(tick) {
             Ok(Request::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                 if keys_wanted {
                     set_keys(&dev, false);
@@ -169,14 +177,7 @@ fn handle(req: Request, dev: &mut Option<Device>, emit: &impl Fn(Event)) {
                 actions::apply(d, &delta)?;
                 // Remember what was applied before re-reading: the strip
                 // effect cannot be read back and comes from this state.
-                if let Ok(uuid) = d
-                    .request(&crate::protocol::commands::get_uuid())
-                    .and_then(|p| crate::protocol::commands::decode_uuid(&p))
-                {
-                    let mut state = crate::config::State::load();
-                    state.devices.entry(uuid).or_default().merge(&delta);
-                    let _ = state.save();
-                }
+                actions::remember_applied(d, &delta);
                 emit(Event::Applied);
                 emit(Event::Snapshot(Box::new(actions::read_snapshot(d)?)));
             }

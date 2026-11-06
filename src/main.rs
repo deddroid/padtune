@@ -266,16 +266,9 @@ fn run(cli: Cli) -> padtune::Result<()> {
                 }
             }
             actions::apply(&dev, &delta)?;
-            if let Some(strip) = &delta.strip {
+            if delta.strip.is_some() {
                 // The strip cannot be read back: remember it for the GUI.
-                if let Ok(uuid) = dev
-                    .request(&padtune::protocol::commands::get_uuid())
-                    .and_then(|p| padtune::protocol::commands::decode_uuid(&p))
-                {
-                    let mut state = padtune::config::State::load();
-                    state.devices.entry(uuid).or_default().strip = Some(strip.clone());
-                    let _ = state.save();
-                }
+                actions::remember_applied(&dev, &delta);
                 println!("OK (acknowledged by the controller; visible in custom-light mode)");
             } else {
                 println!("OK (verified by read-back)");

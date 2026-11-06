@@ -162,18 +162,8 @@ impl Macro {
                 record.len()
             )));
         }
-        let declared = usize::from(u16::from_be_bytes([record[2], record[3]]));
-        if declared != record.len() {
-            return Err(Error::Protocol(format!(
-                "macro declares {declared} bytes but has {}",
-                record.len()
-            )));
-        }
-        let stored = crc::stored_crc(record).unwrap_or_default();
-        let computed = crc::blob_crc(record);
-        if stored != computed {
-            return Err(Error::Crc { stored, computed });
-        }
+        crc::check_length(record, "macro")?;
+        crc::check_crc(record)?;
         let steps = record[HEADER_LEN..]
             .as_chunks::<STEP_LEN>()
             .0

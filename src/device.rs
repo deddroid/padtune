@@ -25,7 +25,9 @@ fn debug_enabled() -> bool {
     std::env::var_os("PADTUNE_DEBUG").is_some_and(|v| v != "0")
 }
 
-fn hex(bytes: &[u8]) -> String {
+/// Space-separated hex dump, as used by the `PADTUNE_DEBUG` log and the
+/// diagnostic examples.
+pub fn hex(bytes: &[u8]) -> String {
     bytes
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -50,6 +52,19 @@ pub struct Candidate {
     pub interface: i32,
 }
 
+impl From<&DeviceInfo> for Candidate {
+    fn from(i: &DeviceInfo) -> Self {
+        Candidate {
+            path: i.path().to_string_lossy().into_owned(),
+            vendor_id: i.vendor_id(),
+            product_id: i.product_id(),
+            product: i.product_string().unwrap_or_default().to_string(),
+            manufacturer: i.manufacturer_string().unwrap_or_default().to_string(),
+            interface: i.interface_number(),
+        }
+    }
+}
+
 fn is_config(info: &DeviceInfo) -> bool {
     info.vendor_id() == VENDOR_ID
         && PRODUCT_IDS.contains(&info.product_id())
@@ -64,14 +79,7 @@ pub fn list() -> Result<Vec<Candidate>> {
     let mut out: Vec<Candidate> = api
         .device_list()
         .filter(|i| is_config(i))
-        .map(|i| Candidate {
-            path: i.path().to_string_lossy().into_owned(),
-            vendor_id: i.vendor_id(),
-            product_id: i.product_id(),
-            product: i.product_string().unwrap_or_default().to_string(),
-            manufacturer: i.manufacturer_string().unwrap_or_default().to_string(),
-            interface: i.interface_number(),
-        })
+        .map(Candidate::from)
         .collect();
     out.dedup_by(|a, b| a.path == b.path);
     Ok(out)
@@ -104,17 +112,9 @@ impl Device {
         let hid = info
             .open_device(&api)
             .map_err(|e| Error::Hid(e.to_string()))?;
-        let info = Candidate {
-            path: info.path().to_string_lossy().into_owned(),
-            vendor_id: info.vendor_id(),
-            product_id: info.product_id(),
-            product: info.product_string().unwrap_or_default().to_string(),
-            manufacturer: info.manufacturer_string().unwrap_or_default().to_string(),
-            interface: info.interface_number(),
-        };
         Ok(Self {
             hid,
-            info,
+            info: Candidate::from(info),
             debug: debug_enabled(),
         })
     }
@@ -154,8 +154,13 @@ impl Device {
     }
 
     /// Discards pending input (stale replies from a previous exchange).
+    ///
+    /// Non-blocking: a zero timeout returns at once when nothing is queued,
+    /// so an idle bus costs nothing (the previous 5 ms wait was paid by every
+    /// single request). A late straggler is harmless: [`Self::collect`]
+    /// matches replies by opcode and skips anything else.
     pub fn drain(&self) -> Result<()> {
-        while self.recv(Duration::from_millis(5))?.is_some() {}
+        while self.recv(Duration::ZERO)?.is_some() {}
         Ok(())
     }
 
