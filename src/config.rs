@@ -90,18 +90,35 @@ impl Settings {
 }
 
 /// Hex encoding used to store raw profile bytes in TOML.
+///
+/// Also on the GUI's per-frame path (`dirty()` compares two snapshot
+/// configs), so it does a single allocation and no formatting machinery.
 pub fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(DIGITS[usize::from(b >> 4)] as char);
+        s.push(DIGITS[usize::from(b & 0x0f)] as char);
+    }
+    s
 }
 
 pub fn from_hex(s: &str) -> Result<Vec<u8>> {
-    let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
-    if !s.len().is_multiple_of(2) {
+    let digits: Vec<u8> = s.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if !digits.len().is_multiple_of(2) {
         return Err(Error::Invalid("odd-length hex".into()));
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| Error::Invalid("bad hex".into())))
+    let nibble = |c: u8| {
+        (c as char)
+            .to_digit(16)
+            .map(|d| d as u8)
+            .ok_or_else(|| Error::Invalid("bad hex".into()))
+    };
+    digits
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[h, l]| Ok((nibble(*h)? << 4) | nibble(*l)?))
         .collect()
 }
 

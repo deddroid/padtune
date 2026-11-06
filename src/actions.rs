@@ -3,8 +3,30 @@
 use crate::config::{DeviceConfig, to_hex};
 use crate::device::Device;
 use crate::protocol::commands::{self, MacroSlotInfo, Mode};
+use crate::protocol::crc;
+use crate::protocol::frame::REPORT_LEN;
 use crate::protocol::profile::Profile;
 use crate::{Error, Result};
+
+/// Sends a GET and decodes its reply. `None` when the controller does not
+/// answer or the reply is malformed: these are optional features, and a
+/// missing one must not fail the whole read.
+fn fetch<T>(
+    dev: &Device,
+    req: [u8; REPORT_LEN],
+    decode: impl FnOnce(&[u8]) -> Result<T>,
+) -> Option<T> {
+    dev.request(&req).and_then(|p| decode(&p)).ok()
+}
+
+/// Decoder for replies whose value is the single byte at `index`.
+fn byte(index: usize) -> impl Fn(&[u8]) -> Result<u8> {
+    move |p| {
+        p.get(index)
+            .copied()
+            .ok_or_else(|| Error::Protocol(format!("reply shorter than {} bytes", index + 1)))
+    }
+}
 
 /// Everything the controller reports about itself.
 #[derive(Debug, Clone)]
@@ -24,26 +46,19 @@ pub use crate::protocol::commands::polling_hz;
 
 /// Reads identity and status (read-only commands only).
 pub fn read_info(dev: &Device) -> Result<DeviceInfo> {
-    let mode = dev
-        .request(&commands::get_mode())
-        .and_then(|p| commands::decode_mode(&p))
-        .ok();
-    let zkm_version = dev
-        .request(&commands::get_zkm_version())
-        .and_then(|p| commands::decode_zkm_version(&p))
-        .ok();
-    let uuid = dev
-        .request(&commands::get_uuid())
-        .and_then(|p| commands::decode_uuid(&p))
-        .ok();
-    let profile_size = dev
-        .request(&commands::get_profile_size())
-        .and_then(|p| commands::decode_profile_size(&p))
-        .ok();
-    let polling_code = dev
-        .request(&commands::get_polling())
-        .ok()
-        .and_then(|p| p.get(1).copied());
+    let mode = fetch(dev, commands::get_mode(), commands::decode_mode);
+    let zkm_version = fetch(
+        dev,
+        commands::get_zkm_version(),
+        commands::decode_zkm_version,
+    );
+    let uuid = fetch(dev, commands::get_uuid(), commands::decode_uuid);
+    let profile_size = fetch(
+        dev,
+        commands::get_profile_size(),
+        commands::decode_profile_size,
+    );
+    let polling_code = fetch(dev, commands::get_polling(), byte(1));
     Ok(DeviceInfo {
         path: dev.info.path.clone(),
         vid: dev.info.vendor_id,
@@ -59,10 +74,9 @@ pub fn read_info(dev: &Device) -> Result<DeviceInfo> {
 
 /// Reads the base profile.
 pub fn read_profile(dev: &Device) -> Result<Profile> {
-    let blob = dev.request_blob(&commands::get_profile(), |b| {
-        b.len() >= 4 && b.len() >= usize::from(u16::from_be_bytes([b[2], b[3]]))
-    })?;
-    let declared = usize::from(u16::from_be_bytes([blob[2], blob[3]]));
+    let blob = dev.request_blob(&commands::get_profile(), crc::is_complete)?;
+    let declared =
+        crc::declared_len(&blob).ok_or_else(|| Error::Protocol("profile blob too short".into()))?;
     Profile::from_bytes(&blob[..declared])
 }
 
@@ -127,22 +141,13 @@ impl Snapshot {
 pub fn read_snapshot(dev: &Device) -> Result<Snapshot> {
     let info = read_info(dev)?;
     let profile = read_profile(dev).ok();
-    let led_brightness = dev
-        .request(&commands::get_led_brightness())
-        .ok()
-        .and_then(|p| p.first().copied());
-    let logo_colors = dev
-        .request(&commands::get_logo_led())
-        .and_then(|p| commands::decode_logo_led(&p))
-        .ok();
+    let led_brightness = fetch(dev, commands::get_led_brightness(), byte(0));
+    let logo_colors = fetch(dev, commands::get_logo_led(), commands::decode_logo_led);
     let power = read_power(dev).ok();
     let macros = (0..crate::protocol::macros::SLOTS as u8)
         .filter_map(|s| read_macro(dev, s).ok())
         .collect();
-    let wireless_flag = dev
-        .request(&commands::get_wireless_flag())
-        .ok()
-        .and_then(|p| p.first().copied());
+    let wireless_flag = fetch(dev, commands::get_wireless_flag(), byte(0));
     let connection = wireless_flag.and_then(link_from_flag);
     let strip = info.uuid.as_ref().and_then(|u| {
         crate::config::State::load()
@@ -167,12 +172,23 @@ pub fn read_power(dev: &Device) -> Result<commands::Power> {
     commands::decode_power(&dev.request(&commands::get_power())?)
 }
 
+/// Records `delta` as the last configuration applied to this controller
+/// (keyed by UUID), so write-only settings such as the light strip can be
+/// shown again later. Shared by the CLI and the GUI worker.
+pub fn remember_applied(dev: &Device, delta: &DeviceConfig) {
+    if let Some(uuid) = fetch(dev, commands::get_uuid(), commands::decode_uuid) {
+        let mut state = crate::config::State::load();
+        state.devices.entry(uuid).or_default().merge(delta);
+        let _ = state.save();
+    }
+}
+
 /// Sends a short "set" command, then reads the value back with `get` and
 /// checks it with `matches`.
 fn set_and_verify(
     dev: &Device,
-    set: &[u8; crate::protocol::frame::REPORT_LEN],
-    get: &[u8; crate::protocol::frame::REPORT_LEN],
+    set: &[u8; REPORT_LEN],
+    get: &[u8; REPORT_LEN],
     matches: impl Fn(&[u8]) -> bool,
     what: &str,
 ) -> Result<()> {
@@ -275,9 +291,9 @@ pub fn read_macro(dev: &Device, slot: u8) -> Result<crate::protocol::macros::Mac
     let req = commands::get_macro(slot);
     let record = match dev.request(&req) {
         Ok(p) => p,
-        Err(Error::Protocol(m)) if m.contains("long") => dev.request_blob(&req, |b| {
-            b.len() >= 4 && b.len() >= usize::from(u16::from_be_bytes([b[2], b[3]]))
-        })?,
+        Err(Error::Protocol(m)) if m.contains("long") => {
+            dev.request_blob(&req, crc::is_complete)?
+        }
         Err(e) => return Err(e),
     };
     Macro::decode(&record)
