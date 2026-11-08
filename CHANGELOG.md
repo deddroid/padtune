@@ -3,8 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
-- Calibrate: the left and right stick rings were swapped; rotating the left
-  stick now fills the left ring.
+- Calibrate: the left and right stick rings were swapped and their sectors
+  drawn in the wrong places; rotating the left stick now fills the left ring,
+  and pushing a stick up lights the top of its ring.
 
 ## [0.3.0] - 2026-11-08
 
