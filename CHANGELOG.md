@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
 ### Added
 - Sticks and Triggers tabs: **Calibrate** recentres the sticks and relearns
   the full travel of sticks and triggers, with live progress (edge sectors
@@ -22,7 +24,8 @@
   axis rests at 0 and reaches full travel, both triggers go from 0 to 255.
   Details in `docs/hw-notes/calibration.md`.
 - Rainbow 2 Pro: profile byte `0x4C` selects the stick the gyroscope moves
-  (0 off, 1 left, 2 right); byte `0x53` reverses its X and Y axes. Details in `docs/hw-notes/gyro.md`.
+  (0 off, 1 left, 2 right); byte `0x53` reverses its X and Y axes. Details in
+  `docs/hw-notes/gyro.md`.
 - Rainbow 2 Pro: `D4` reports the active configuration (0..3) and the profile
   commands read and write that configuration. Details in
   `docs/hw-notes/configurations.md`.
