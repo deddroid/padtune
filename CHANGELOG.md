@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Calibrate: the left and right stick rings were swapped; rotating the left
+  stick now fills the left ring.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

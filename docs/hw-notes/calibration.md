@@ -50,12 +50,15 @@ matches the official tool (it only ever sends cancel). Ipotesi on the steps:
 Between START and END the controller pushes `02` reports (the key-report
 opcode) without `D2` being on. They are progress flags, not key bits:
 
-* byte 4, high nibble: edge sectors reached by one stick. `20`, `80`, `10`,
+* byte 4, high nibble: edge sectors reached by the **right** stick. `20`, `80`, `10`,
   `40` are the four cardinal directions; combinations are diagonals. One full
   rotation read `20 a0 80 90 10 50 40 60`.
-* byte 4, low nibble: the same for the other stick (`08`, `02`, `04`, `01`).
+* byte 4, low nibble: the same for the **left** stick (`08`, `02`, `04`, `01`).
 * byte 2: `20` and `40` are the two triggers at full travel, `60` both.
-* Which stick and which trigger owns which bits is ipotesi.
+* Sticks (HW, 2026-11-08): rotating the left stick alone in PadTune lit the
+  ring of the other stick until the nibbles were swapped, so low = left.
+* Which trigger owns `20` and which `40` is ipotesi (PadTune assumes
+  `20` = LT).
 
 ## Result (HW)
 
@@ -82,4 +85,4 @@ carry no raw motion data, only its effect on the sticks once it is mapped.
 
 * Meaning of step `05`, if it exists, and of a failed run's reply.
 * Whether gamepad output pauses during the sticks run, as it does with `D2`.
-* Bit ownership of the progress flags (left/right, LT/RT).
+* Trigger ownership of the progress flags (LT/RT).
