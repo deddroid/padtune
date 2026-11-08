@@ -153,6 +153,9 @@ fn run(cli: Cli) -> padtune::Result<()> {
                     None => println!("Polling rate:  unknown code {c}"),
                 }
             }
+            if let Some(c) = i.active_config {
+                println!("Configuration: {} (white LED from the top)", c + 1);
+            }
         }
         Cmd::Profile => {
             let dev = Device::open(cli.device.as_deref())?;

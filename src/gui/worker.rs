@@ -35,6 +35,9 @@ pub enum Event {
     Busy(bool),
     Snapshot(Box<Snapshot>),
     Battery(u8),
+    /// Active on-board configuration, read every few seconds: it changes
+    /// with the controller's Configuration key.
+    ActiveConfig(u8),
     /// Whether an idle 2.4G dongle (no linked controller) is plugged in.
     IdleDongle(bool),
     /// Pressed buttons from the controller's live key report (slot bits).
@@ -207,7 +210,12 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                 // Periodic poll: battery when connected, hot-plug when not.
                 match &dev {
                     Some(d) => match actions::read_power(d) {
-                        Ok(p) => emit(Event::Battery(p.battery)),
+                        Ok(p) => {
+                            emit(Event::Battery(p.battery));
+                            if let Some(c) = actions::read_active_config(d) {
+                                emit(Event::ActiveConfig(c));
+                            }
+                        }
                         Err(e) => {
                             dev = None;
                             emit(Event::Disconnected(e.to_string()));

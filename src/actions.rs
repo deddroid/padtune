@@ -40,6 +40,8 @@ pub struct DeviceInfo {
     pub uuid: Option<String>,
     pub profile_size: Option<usize>,
     pub polling_code: Option<u8>,
+    /// Active on-board configuration, `0` = top LED.
+    pub active_config: Option<u8>,
 }
 
 pub use crate::protocol::commands::polling_hz;
@@ -59,6 +61,7 @@ pub fn read_info(dev: &Device) -> Result<DeviceInfo> {
         commands::decode_profile_size,
     );
     let polling_code = fetch(dev, commands::get_polling(), byte(1));
+    let active_config = read_active_config(dev);
     Ok(DeviceInfo {
         path: dev.info.path.clone(),
         vid: dev.info.vendor_id,
@@ -69,7 +72,17 @@ pub fn read_info(dev: &Device) -> Result<DeviceInfo> {
         uuid,
         profile_size,
         polling_code,
+        active_config,
     })
+}
+
+/// Active on-board configuration (`D4`); `None` when it cannot be read.
+pub fn read_active_config(dev: &Device) -> Option<u8> {
+    fetch(
+        dev,
+        commands::get_gamepad_mode(),
+        commands::decode_active_config,
+    )
 }
 
 /// Reads the base profile.

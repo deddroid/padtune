@@ -8,6 +8,9 @@
   reached per stick, full presses per trigger).
 - Sticks tab → Gyroscope: choose which stick tilting the controller moves
   (off, left, right), invert its X or Y axis, and calibrate the gyroscope.
+- Active on-board configuration (white LED) shown next to the page title;
+  switching it with the controller's Configuration key reloads its settings
+  in PadTune within a few seconds. `padtune info` prints it too.
 
 ### Fixed
 - Sticks and Triggers tabs: the right-hand cards no longer run past the window
@@ -20,6 +23,9 @@
   Details in `docs/hw-notes/calibration.md`.
 - Rainbow 2 Pro: profile byte `0x4C` selects the stick the gyroscope moves
   (0 off, 1 left, 2 right); byte `0x53` reverses its X and Y axes. Details in `docs/hw-notes/gyro.md`.
+- Rainbow 2 Pro: `D4` reports the active configuration (0..3) and the profile
+  commands read and write that configuration. Details in
+  `docs/hw-notes/configurations.md`.
 
 ## [0.2.1] - 2026-11-08
 

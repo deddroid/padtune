@@ -21,7 +21,7 @@ works on any PC or console afterwards.
 | **Lights** | Light-strip effect (static, breathing, gradient, flicker; speed, brightness, up to 7 colours per side, or synced with the logo), strip brightness, HOME logo colour with intensity, factory defaults with one click. |
 | **Macros** | Edit the four on-board macros step by step (buttons held, duration), bind them to M1/M2. |
 | **Polling rate** | Read and set 250 / 500 / 1000 / 2000 Hz. |
-| **Device** | Model, firmware, serial, battery, USB cable vs 2.4G dongle, key test (every button including M1/M2, FN and the front keys), backup/restore, factory settings. |
+| **Device** | Model, firmware, serial, battery, USB cable vs 2.4G dongle, key test (every button including M1/M2, FN and the front keys), backup/restore, factory settings. The active on-board configuration (white LED) is shown next to the page title and followed when you switch it on the controller. |
 | **Profiles** | Save named profiles and apply them with one click — only the parts that changed are sent. |
 | **Controller functions** | What every on-board shortcut does (TURBO, Mapping, MACRO, Configuration, FN combos, calibration, mode switch), from the official manual. |
 | **Desktop** | Tray icon, start with the system, single instance, English and Italian, light, dark or system theme (Settings → Theme). |

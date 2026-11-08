@@ -187,6 +187,20 @@ pub fn decode_key_report(payload: &[u8]) -> Result<KeyReport> {
     Ok(KeyReport { keys, axes })
 }
 
+/// Number of on-board configurations (white LEDs).
+pub const CONFIGURATIONS: u8 = 4;
+
+/// Active on-board configuration from a GetGamepadMode (`D4`) reply
+/// `06 CC LL`: `0` = top LED. The profile commands (`D6`/`D7`) work on this
+/// configuration; only the controller's Configuration key changes it.
+pub fn decode_active_config(payload: &[u8]) -> Result<u8> {
+    need(payload, 2, "gamepad mode")?;
+    match payload[1] {
+        c if c < CONFIGURATIONS => Ok(c),
+        c => Err(Error::Protocol(format!("unknown configuration index {c}"))),
+    }
+}
+
 fn need(payload: &[u8], n: usize, what: &str) -> Result<()> {
     if payload.len() < n {
         return Err(Error::Protocol(format!(
@@ -336,6 +350,21 @@ mod tests {
             assert_eq!(k.axes, None);
         }
         assert_eq!(set_key_reports(true)[..5], [0xa5, 0x05, 0xd2, 0x01, 0x7d]);
+    }
+
+    // Replies logged on 2026-11-08 while stepping through the white LEDs.
+    #[test]
+    fn decodes_active_configuration() {
+        for (reply, led) in [
+            ([6, 0, 1], 0),
+            ([6, 1, 1], 1),
+            ([6, 2, 1], 2),
+            ([6, 3, 1], 3),
+        ] {
+            assert_eq!(decode_active_config(&reply).unwrap(), led);
+        }
+        assert!(decode_active_config(&[6, 4, 1]).is_err());
+        assert!(decode_active_config(&[6]).is_err());
     }
 
     #[test]
