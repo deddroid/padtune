@@ -243,6 +243,7 @@ fn demo_snapshot() -> Snapshot {
             uuid: Some("2220B21AFF020608".into()),
             profile_size: Some(280),
             polling_code: Some(0),
+            active_config: Some(1),
         },
         profile,
         led_brightness: Some(255),
@@ -430,6 +431,17 @@ impl App {
                         p.battery = b;
                     }
                 }
+                Event::ActiveConfig(c) => {
+                    // The Configuration key switched the controller to
+                    // another profile: show that one. Waits while a request
+                    // or a calibration is running (the next poll retries).
+                    let shown = self.snap.as_ref().and_then(|s| s.info.active_config);
+                    let calibrating = self.cal_sticks.busy() || self.cal_gyro.busy();
+                    if shown.is_some_and(|s| s != c) && !self.busy && !calibrating {
+                        self.info(format!("{} {}", self.t(T::ConfigLoaded), c + 1));
+                        self.send(Request::Refresh);
+                    }
+                }
                 Event::CalibrationProgress(p) => {
                     if self.cal_sticks == Run::Active {
                         self.cal_tracker.update(p);
@@ -552,6 +564,19 @@ impl App {
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.heading(self.t(self.tab.label()));
+            if self.connected
+                && let Some(c) = self.snap.as_ref().and_then(|s| s.info.active_config)
+            {
+                egui::Frame::new()
+                    .fill(theme::accent_soft())
+                    .corner_radius(theme::CAPSULE)
+                    .inner_margin(egui::Margin::symmetric(10, 4))
+                    .show(ui, |ui| {
+                        ui.label(format!("{} {}", self.t(T::ConfigN), c + 1));
+                    })
+                    .response
+                    .on_hover_text(self.t(T::ConfigHint));
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let dirty = self.dirty();
                 let can = dirty && self.connected && !self.busy && self.worker.is_some();

@@ -21,7 +21,7 @@ l'interfaccia di configurazione del controller, quindi ogni impostazione resta
 | **Luci** | Effetto della striscia LED (fisso, respiro, gradiente, lampeggio; velocità, luminosità, fino a 7 colori per lato, oppure sincronizzato con il logo), luminosità della striscia, colore del logo HOME con intensità, valori di fabbrica con un clic. |
 | **Macro** | Modifica le quattro macro del controller passo per passo (tasti premuti, durata) e associale a M1/M2. |
 | **Polling** | Lettura e impostazione a 250 / 500 / 1000 / 2000 Hz. |
-| **Dispositivo** | Modello, firmware, seriale, batteria, cavo USB o dongle 2.4G, test tasti (tutti, anche M1/M2, FN e i tasti frontali), backup/ripristino, impostazioni di fabbrica. |
+| **Dispositivo** | Modello, firmware, seriale, batteria, cavo USB o dongle 2.4G, test tasti (tutti, anche M1/M2, FN e i tasti frontali), backup/ripristino, impostazioni di fabbrica. La configurazione attiva sul controller (LED bianco) è indicata accanto al titolo e seguita quando la cambi dal controller. |
 | **Profili** | Salva profili con nome e applicali con un clic — vengono inviate solo le parti cambiate. |
 | **Funzioni del controller** | Cosa fa ogni scorciatoia integrata (TURBO, Mapping, MACRO, Configuration, combinazioni con FN, calibrazione, cambio modalità), dal manuale ufficiale. |
 | **Desktop** | Icona nella barra di sistema, avvio con il sistema, istanza unica, inglese e italiano, tema chiaro, scuro o di sistema (Impostazioni → Tema). |

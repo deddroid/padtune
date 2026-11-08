@@ -277,6 +277,9 @@ strings! {
     GyroInvertX => "Invert X", "Inverti X";
     GyroInvertY => "Invert Y", "Inverti Y";
     LiveUnavailable => "Live input not available (gamepad not visible to the system).", "Input live non disponibile (gamepad non visibile al sistema).";
+    ConfigN => "Configuration", "Configurazione";
+    ConfigHint => "Active configuration on the controller (white LED). Change it with the Configuration key: PadTune then loads that configuration's settings.", "Configurazione attiva sul controller (LED bianco). Si cambia con il tasto Configuration: PadTune carica da solo le impostazioni di quella configurazione.";
+    ConfigLoaded => "Loaded configuration", "Caricata la configurazione";
     Error => "Error", "Errore";
 }
 
