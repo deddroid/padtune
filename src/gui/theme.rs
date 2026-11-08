@@ -1,6 +1,6 @@
 //! Visual style: follows the system theme with two palettes ("Carta calda"
-//! for light, "Viola notte" for dark), concentric corner radii and fallback
-//! fonts for symbols.
+//! for light, "Viola notte" for dark), concentric corner radii, embedded UI
+//! fonts (Inter for text, Rajdhani for titles) and fallback fonts for symbols.
 //!
 //! Colours that depend on the theme are read through the accessor functions
 //! ([`bg`], [`surface`], [`accent`], …), which return the palette egui is
@@ -8,10 +8,21 @@
 //! Status colours ([`ok`], [`warn`], [`err`]) are darker in the light theme
 //! so text keeps its contrast, and are always paired with text or an icon.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use eframe::egui::{self, Color32, CornerRadius, FontData, FontFamily, Stroke, Theme};
+use eframe::egui::{
+    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, Theme,
+};
 use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+
+/// Font family of titles and headings (Rajdhani).
+pub const TITLE_FAMILY: &str = "titoli";
+
+/// Title font at `size`.
+pub fn title(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(TITLE_FAMILY.into()))
+}
 
 /// Colour tokens of one theme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,9 +153,8 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.button_padding = egui::vec2(12.0, 8.0);
         s.spacing.slider_width = 220.0;
         s.spacing.interact_size.y = 32.0;
-        use egui::{FontId, TextStyle};
-        s.text_styles
-            .insert(TextStyle::Heading, FontId::proportional(22.0));
+        use egui::TextStyle;
+        s.text_styles.insert(TextStyle::Heading, title(26.0));
         s.text_styles
             .insert(TextStyle::Body, FontId::proportional(14.5));
         s.text_styles
@@ -152,8 +162,37 @@ pub fn apply(ctx: &egui::Context) {
         s.text_styles
             .insert(TextStyle::Small, FontId::proportional(12.0));
     });
+    install_fonts(ctx);
     install_fallback_fonts(ctx);
     sync(ctx);
+}
+
+/// Embedded UI fonts (SIL OFL, licences in `assets/fonts/`): Inter for text
+/// and controls, Rajdhani for titles. Inter ships as a variable font; egui
+/// renders its default instance (Regular, optical size 14).
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = FontDefinitions::default();
+    fonts.font_data.insert(
+        "inter".into(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../../assets/fonts/Inter-Variable.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "rajdhani".into(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../../assets/fonts/Rajdhani-Medium.ttf"
+        ))),
+    );
+    let body = fonts.families.entry(FontFamily::Proportional).or_default();
+    body.insert(0, "inter".into());
+    // Titles fall back to the body fonts for glyphs Rajdhani lacks.
+    let mut titles = vec!["rajdhani".to_owned()];
+    titles.extend(body.iter().cloned());
+    fonts
+        .families
+        .insert(FontFamily::Name(TITLE_FAMILY.into()), titles);
+    ctx.set_fonts(fonts);
 }
 
 /// Maps a palette onto egui's visuals so the stock widgets follow it.
