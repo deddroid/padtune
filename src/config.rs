@@ -49,11 +49,23 @@ fn write_toml<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     Ok(())
 }
 
+/// Light/dark appearance of the GUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    /// Follow the operating system.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 /// Application preferences (independent from any controller profile).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub language: Lang,
+    pub theme: ThemeMode,
     /// Keep the light strip on the HOME logo colour.
     pub strip_follows_logo: bool,
     /// The user's own stick-curve presets by slot ("1".."3"); TOML cannot
@@ -68,6 +80,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: Lang::from_env(),
+            theme: ThemeMode::System,
             strip_follows_logo: false,
             curve_presets: BTreeMap::new(),
             autostart: false,
@@ -338,6 +351,7 @@ mod tests {
     fn settings_toml_roundtrip() {
         let s = Settings {
             language: Lang::It,
+            theme: ThemeMode::Dark,
             strip_follows_logo: true,
             curve_presets: BTreeMap::from([(
                 "2".to_string(),
@@ -360,6 +374,7 @@ mod tests {
         // Unknown/missing fields fall back to defaults.
         let partial: Settings = toml::from_str("language = \"it\"").unwrap();
         assert_eq!(partial.language, Lang::It);
+        assert_eq!(partial.theme, ThemeMode::System);
     }
 
     #[test]
