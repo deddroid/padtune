@@ -43,10 +43,13 @@ fn looks_like_config(info: &DeviceInfo) -> bool {
         || (info.usage_page() == 0 && info.interface_number() == CONFIG_INTERFACE)
 }
 
-/// Sends one short request and returns the matching reply payload, if any.
+/// Sends one short request and returns the matching reply payload. `None`
+/// covers both "no reply" and an I/O error: for a probe the distinction does
+/// not matter, the interface simply does not speak this protocol.
 fn request(hid: &HidDevice, report: &[u8; REPORT_LEN]) -> Option<Vec<u8>> {
     let op = report[2];
-    // Drain stale input.
+    // Drain stale input. A read error here is treated as "nothing pending":
+    // the write below surfaces a broken handle anyway.
     let mut scratch = [0u8; REPORT_LEN + 1];
     while hid.read_timeout(&mut scratch, 5).unwrap_or(0) > 0 {}
 
@@ -172,6 +175,7 @@ fn main() {
         );
         match info.open_device(&api) {
             Ok(hid) => {
+                // Only affects plain read(); read_timeout() works either way.
                 hid.set_blocking_mode(false).ok();
                 probe(&hid);
             }

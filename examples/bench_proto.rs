@@ -33,7 +33,7 @@ fn bench(name: &str, iters: u32, mut f: impl FnMut()) {
             t.elapsed().as_nanos() as f64 / f64::from(iters)
         })
         .collect();
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    samples.sort_by(f64::total_cmp);
     let med = samples[ROUNDS / 2];
     let min = samples[0];
     println!("{name:<44} {med:>10.1} ns/op   (min {min:.1})");
@@ -61,10 +61,10 @@ fn sample_macro() -> Macro {
 }
 
 fn main() {
-    let profile = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
+    let profile = Profile::from_bytes(&RAINBOW2PRO_FACTORY).expect("factory profile is valid");
     let profile_bytes = profile.to_bytes();
     let profile_hex = to_hex(&profile_bytes);
-    let macro_rec = sample_macro().encode().unwrap();
+    let macro_rec = sample_macro().encode().expect("sample macro is valid");
     let long = long_frames(commands::op::SET_PROFILE, &profile_bytes);
     let e2_reply = [
         0xa5u8, 0x10, 0xe2, 0x56, 0x51, 0x01, 0x5a, 0x4a, 0x2d, 0x43, 0x31, 0x70, 0x72, 0x6f, 0x00,
@@ -80,7 +80,7 @@ fn main() {
         black_box(short(black_box(commands::op::GET_MODE), black_box(&[])));
     });
     bench("frame::parse (short reply)", 200_000, || {
-        black_box(parse(black_box(&e2_reply)).unwrap());
+        black_box(parse(black_box(&e2_reply)).expect("captured reply is valid"));
     });
     bench("frame::long_frames (280B -> 5 frames)", 50_000, || {
         black_box(long_frames(
@@ -89,29 +89,38 @@ fn main() {
         ));
     });
     bench("frame::reassemble (5 frames -> 280B)", 50_000, || {
-        let parsed: Vec<_> = long.iter().map(|f| parse(f).unwrap()).collect();
-        black_box(frame::reassemble(commands::op::SET_PROFILE, &parsed).unwrap());
+        let parsed: Vec<_> = long
+            .iter()
+            .map(|f| parse(f).expect("own frames are valid"))
+            .collect();
+        black_box(
+            frame::reassemble(commands::op::SET_PROFILE, &parsed).expect("fragments are complete"),
+        );
     });
     bench("crc16_modbus (280B)", 50_000, || {
         black_box(crc16_modbus(black_box(&profile_bytes)));
     });
     bench("Profile::from_bytes (280B, CRC check)", 50_000, || {
-        black_box(Profile::from_bytes(black_box(&profile_bytes)).unwrap());
+        black_box(Profile::from_bytes(black_box(&profile_bytes)).expect("sealed profile is valid"));
     });
     bench("Profile::to_bytes (clone + seal)", 50_000, || {
         black_box(black_box(&profile).to_bytes());
     });
     bench("Macro::decode (2 steps)", 100_000, || {
-        black_box(Macro::decode(black_box(&macro_rec)).unwrap());
+        black_box(Macro::decode(black_box(&macro_rec)).expect("sealed macro is valid"));
     });
     bench("Macro::encode (2 steps)", 100_000, || {
-        black_box(black_box(&sample_macro()).encode().unwrap());
+        black_box(
+            black_box(&sample_macro())
+                .encode()
+                .expect("sample macro is valid"),
+        );
     });
     bench("to_hex (280B profile)", 50_000, || {
         black_box(to_hex(black_box(&profile_bytes)));
     });
     bench("from_hex (560 chars)", 50_000, || {
-        black_box(from_hex(black_box(&profile_hex)).unwrap());
+        black_box(from_hex(black_box(&profile_hex)).expect("hex came from to_hex"));
     });
     bench("DeviceConfig::changes_from (factory)", 20_000, || {
         black_box(black_box(&changed_cfg).changes_from(black_box(&factory_cfg)));
