@@ -281,11 +281,6 @@ pub fn pad(
     );
     painter.circle_filled(at(0.19, 0.66), 70.0 * s, body);
     painter.circle_filled(at(0.81, 0.66), 70.0 * s, body);
-    painter.rect_filled(
-        Rect::from_min_max(at(0.36, 0.70), at(0.64, 0.84)),
-        10.0 * s,
-        Color32::from_rgb(0x1f, 0x21, 0x29),
-    );
 
     // Four white profile LEDs between the D-pad and the right stick.
     for i in 0..4 {

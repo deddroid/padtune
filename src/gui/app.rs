@@ -768,10 +768,22 @@ impl App {
                     if on_dongle {
                         ui.add(egui::Label::new(dim(tr(lang, T::KeyTestCable))).wrap());
                     } else {
-                        ui.toggle_value(
-                            &mut key_test,
-                            RichText::new(format!("⚡ {}", tr(lang, T::KeyTest))).strong(),
-                        );
+                        // A real button (filled, accent while on): a bare
+                        // toggle label did not read as clickable.
+                        let label = RichText::new(format!("⚡ {}", tr(lang, T::KeyTest))).strong();
+                        let button = egui::Button::new(if key_test {
+                            label.color(Color32::WHITE)
+                        } else {
+                            label
+                        })
+                        .fill(if key_test {
+                            accent()
+                        } else {
+                            theme::track()
+                        });
+                        if ui.add(button).clicked() {
+                            key_test = !key_test;
+                        }
                         let hint = if key_test {
                             T::KeyTestOn
                         } else {
