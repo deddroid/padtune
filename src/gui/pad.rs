@@ -3,7 +3,13 @@
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
 use super::live::LiveState;
-use super::theme::{ACCENT, BG, CARD, OK, TEXT_DIM, WARN};
+use super::theme::{self, accent, ok, text_dim, warn};
+
+/// Illustration colours of the controller body: it is a dark object, the
+/// same in both themes.
+const KEY_DARK: Color32 = Color32::from_rgb(0x15, 0x15, 0x1c);
+const KEY: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x28);
+const BODY_TEXT: Color32 = Color32::from_rgb(0x8b, 0x8b, 0xa0);
 
 /// Visual kind of a hotspot.
 #[derive(Clone, Copy, PartialEq)]
@@ -304,7 +310,7 @@ pub fn pad(
         Align2::CENTER_CENTER,
         " back ",
         FontId::proportional(10.0 * s.max(0.8)),
-        TEXT_DIM,
+        BODY_TEXT,
     );
 
     let mut clicked = None;
@@ -335,18 +341,18 @@ pub fn pad(
         }
         let fill = match spot.kind {
             Kind::Face(col) if pressed => col,
-            Kind::Face(_) => BG,
-            _ if pressed => ACCENT,
+            Kind::Face(_) => KEY_DARK,
+            _ if pressed => accent(),
             Kind::Home => marks.logo.unwrap_or(marks.light),
             Kind::Stick => Color32::from_rgb(0x1b, 0x1d, 0x24),
             Kind::Func => Color32::from_rgb(0x30, 0x33, 0x40),
-            _ => CARD,
+            _ => KEY,
         };
         painter.rect_filled(rect, round * s, fill);
         let stroke = if is_sel {
             Stroke::new(2.5, Color32::WHITE)
         } else if hovered {
-            Stroke::new(1.5, ACCENT)
+            Stroke::new(1.5, accent())
         } else if let Kind::Face(col) = spot.kind {
             Stroke::new(1.5, col)
         } else if spot.slot == 30 {
@@ -364,7 +370,11 @@ pub fn pad(
                 live.right
             };
             let dot = c + Vec2::new(x, -y) * (size.x * s * 0.35);
-            painter.circle_filled(dot, 7.0 * s, if pressed { Color32::WHITE } else { ACCENT });
+            painter.circle_filled(
+                dot,
+                7.0 * s,
+                if pressed { Color32::WHITE } else { accent() },
+            );
         }
         let text_col = match spot.kind {
             Kind::Face(col) if !pressed => col,
@@ -387,7 +397,7 @@ pub fn pad(
         // Badges: turbo (amber) and remapped (green).
         let corner = rect.right_top();
         if marks.turbo & bit != 0 {
-            painter.circle_filled(corner, 8.0, WARN);
+            painter.circle_filled(corner, 8.0, warn());
             painter.text(
                 corner,
                 Align2::CENTER_CENTER,
@@ -398,7 +408,7 @@ pub fn pad(
         }
         if marks.remapped & bit != 0 {
             let p = corner + Vec2::new(-16.0, 0.0);
-            painter.circle_filled(p, 8.0, OK);
+            painter.circle_filled(p, 8.0, ok());
             painter.text(
                 p,
                 Align2::CENTER_CENTER,
@@ -418,11 +428,11 @@ pub fn stick_view(ui: &mut egui::Ui, pos: (f32, f32), deadzone: u8, outer: u8, c
     let r = resp.rect;
     let c = r.center();
     let rad = d * 0.46;
-    painter.circle_filled(c, rad, BG);
+    painter.circle_filled(c, rad, theme::track());
     painter.circle_stroke(
         c,
         rad * f32::from(outer) / 100.0,
-        Stroke::new(1.0, Color32::from_gray(90)),
+        Stroke::new(1.0, text_dim()),
     );
     painter.circle_filled(
         c,
@@ -439,15 +449,15 @@ pub fn stick_view(ui: &mut egui::Ui, pos: (f32, f32), deadzone: u8, outer: u8, c
     );
     if connected {
         let p = c + Vec2::new(pos.0, -pos.1) * rad;
-        painter.line_segment([c, p], Stroke::new(1.5, ACCENT));
-        painter.circle_filled(p, 7.0, Color32::WHITE);
+        painter.line_segment([c, p], Stroke::new(1.5, accent()));
+        painter.circle(p, 7.0, Color32::WHITE, Stroke::new(1.0, text_dim()));
         let mag = (pos.0.hypot(pos.1) * 100.0).min(100.0);
         painter.text(
             r.left_bottom() + Vec2::new(4.0, -4.0),
             Align2::LEFT_BOTTOM,
             format!("{mag:.0}%"),
             FontId::monospace(12.0),
-            TEXT_DIM,
+            text_dim(),
         );
     }
 }

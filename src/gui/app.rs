@@ -7,7 +7,7 @@ use eframe::egui::{self, Align, Color32, Layout, RichText, Stroke, Vec2};
 
 use super::live::{self, LiveState};
 use super::pad::{self, Marks};
-use super::theme::{self, ACCENT, ERR, OK, TEXT_DIM, WARN, card, dim};
+use super::theme::{self, accent, card, dim, err, ok, text_dim, warn};
 use super::worker::{Event, Request, Worker};
 use crate::actions::Snapshot;
 use crate::config::{self, DeviceConfig, NamedProfile, Settings};
@@ -439,7 +439,7 @@ impl App {
                 RichText::new("PadTune")
                     .strong()
                     .size(18.0)
-                    .color(Color32::WHITE),
+                    .color(theme::text()),
             );
         });
         ui.horizontal(|ui| {
@@ -458,17 +458,17 @@ impl App {
             let text =
                 RichText::new(format!("{}   {}", tab.icon(), self.t(tab.label()))).size(15.0);
             let btn = egui::Button::new(if selected {
-                text.color(Color32::WHITE)
+                text.color(theme::text())
             } else {
-                text.color(TEXT_DIM)
+                text.color(text_dim())
             })
             .fill(if selected {
-                theme::ACCENT_SOFT
+                theme::accent_soft()
             } else {
                 Color32::TRANSPARENT
             })
             .stroke(if selected {
-                Stroke::new(1.0, ACCENT)
+                Stroke::new(1.0, accent())
             } else {
                 Stroke::NONE
             })
@@ -481,16 +481,16 @@ impl App {
             ui.add_space(12.0);
             let conn = self.connection_label();
             let (color, text) = if self.busy {
-                (WARN, self.t(T::Busy).to_string())
+                (warn(), self.t(T::Busy).to_string())
             } else if self.connected {
-                (OK, conn)
+                (ok(), conn)
             } else {
-                (ERR, self.t(T::Disconnected).to_string())
+                (err(), self.t(T::Disconnected).to_string())
             };
             ui.horizontal(|ui| {
                 ui.add_space(6.0);
                 ui.label(RichText::new("●").color(color));
-                ui.label(RichText::new(text).color(TEXT_DIM));
+                ui.label(RichText::new(text).color(text_dim()));
             });
             if let Some(b) = self.snap.as_ref().and_then(|s| s.power).map(|p| p.battery) {
                 ui.horizontal(|ui| {
@@ -511,9 +511,12 @@ impl App {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let dirty = self.dirty();
                 let can = dirty && self.connected && !self.busy && self.worker.is_some();
-                let apply =
-                    egui::Button::new(RichText::new(self.t(T::Apply)).color(Color32::WHITE))
-                        .fill(if can { ACCENT } else { Color32::from_gray(60) });
+                let apply = egui::Button::new(RichText::new(self.t(T::Apply)).color(if can {
+                    Color32::WHITE
+                } else {
+                    text_dim()
+                }))
+                .fill(if can { accent() } else { theme::track() });
                 if ui.add_enabled(can, apply).clicked()
                     && let (Some(e), Some(s)) = (&self.edit, &self.snap)
                 {
@@ -537,7 +540,7 @@ impl App {
                     self.send(Request::Refresh);
                 }
                 if dirty {
-                    ui.label(RichText::new(format!("● {}", self.t(T::Unsaved))).color(WARN));
+                    ui.label(RichText::new(format!("● {}", self.t(T::Unsaved))).color(warn()));
                 }
             });
         });
@@ -545,14 +548,14 @@ impl App {
             Status::None => {}
             Status::Info(m, at) => {
                 if at.elapsed() < Duration::from_secs(5) {
-                    ui.label(RichText::new(m).color(OK));
+                    ui.label(RichText::new(m).color(ok()));
                 }
             }
             Status::Error(m) => {
                 let text = format!("{}: {m}", self.t(T::Error));
                 let clear = ui
                     .horizontal(|ui| {
-                        ui.label(RichText::new(text).color(ERR));
+                        ui.label(RichText::new(text).color(err()));
                         ui.small_button("✕").clicked()
                     })
                     .inner;
@@ -626,11 +629,7 @@ impl App {
                     ] {
                         let active = s.connection == Some(link);
                         let idle = link == crate::actions::Link::Dongle && self.idle_dongle;
-                        ui.label(RichText::new("●").color(if active {
-                            OK
-                        } else {
-                            Color32::from_gray(70)
-                        }));
+                        ui.label(RichText::new("●").color(if active { ok() } else { text_dim() }));
                         ui.label(RichText::new(tr(lang, label)).strong());
                         if active {
                             let hz = s
@@ -640,10 +639,10 @@ impl App {
                                 .map(|h| format!(" · {h} Hz"))
                                 .unwrap_or_default();
                             ui.label(
-                                RichText::new(format!("{}{hz}", tr(lang, T::Active))).color(OK),
+                                RichText::new(format!("{}{hz}", tr(lang, T::Active))).color(ok()),
                             );
                         } else if idle {
-                            ui.label(RichText::new(tr(lang, T::DonglePresent)).color(WARN));
+                            ui.label(RichText::new(tr(lang, T::DonglePresent)).color(warn()));
                         } else {
                             ui.label(dim(tr(lang, T::NotConnected)));
                         }
@@ -793,7 +792,7 @@ impl App {
                     ui.label(RichText::new(name).size(24.0).strong());
                     ui.add_space(6.0);
                     if let Some(f) = FEATURES.iter().find(|f| f.key_slot == Some(selected)) {
-                        ui.label(RichText::new(tr(lang, T::FunctionKey)).color(WARN));
+                        ui.label(RichText::new(tr(lang, T::FunctionKey)).color(warn()));
                         ui.add_space(6.0);
                         feature_body(ui, lang, f);
                         return;
@@ -809,14 +808,17 @@ impl App {
                     let mut on = mask & (1 << selected) != 0;
                     let label =
                         format!("{}  {}", tr(lang, T::Turbo), if on { "ON" } else { "OFF" });
-                    let btn =
-                        egui::Button::new(RichText::new(label).strong().color(Color32::WHITE))
-                            .fill(if on {
-                                WARN.gamma_multiply(0.8)
-                            } else {
-                                Color32::from_gray(55)
-                            })
-                            .min_size(Vec2::new(ui.available_width(), 36.0));
+                    let btn = egui::Button::new(RichText::new(label).strong().color(if on {
+                        Color32::WHITE
+                    } else {
+                        theme::text()
+                    }))
+                    .fill(if on {
+                        warn().gamma_multiply(0.8)
+                    } else {
+                        theme::track()
+                    })
+                    .min_size(Vec2::new(ui.available_width(), 36.0));
                     if ui.add(btn).clicked() {
                         on = !on;
                         mask = if on {
@@ -855,8 +857,8 @@ impl App {
                 ui.horizontal_top(|ui| {
                     for f in row {
                         egui::Frame::new()
-                            .fill(theme::BG)
-                            .corner_radius(egui::CornerRadius::same(10))
+                            .fill(theme::bg())
+                            .corner_radius(theme::ROUND)
                             .inner_margin(egui::Margin::same(12))
                             .show(ui, |ui| {
                                 ui.set_width((col_w - 24.0).max(120.0));
@@ -988,7 +990,7 @@ impl App {
                     .spacing([12.0, 10.0])
                     .show(ui, |ui| {
                         let s = |ui: &mut egui::Ui, label: String, v: &mut u8| {
-                            ui.label(RichText::new(label).color(TEXT_DIM));
+                            ui.label(RichText::new(label).color(text_dim()));
                             ui.add(egui::Slider::new(v, 0..=100).suffix("%"));
                             ui.end_row();
                         };
@@ -1064,10 +1066,10 @@ impl App {
                         .num_columns(2)
                         .spacing([12.0, 10.0])
                         .show(ui, |ui| {
-                            ui.label(RichText::new(tr(lang, T::TriggerStart)).color(TEXT_DIM));
+                            ui.label(RichText::new(tr(lang, T::TriggerStart)).color(text_dim()));
                             ui.add(egui::Slider::new(&mut t.start, 0..=99).suffix("%"));
                             ui.end_row();
-                            ui.label(RichText::new(tr(lang, T::TriggerEnd)).color(TEXT_DIM));
+                            ui.label(RichText::new(tr(lang, T::TriggerEnd)).color(text_dim()));
                             ui.add(egui::Slider::new(&mut t.end, 1..=100).suffix("%"));
                             ui.end_row();
                         });
@@ -1091,7 +1093,7 @@ impl App {
             ui.label(dim(tr(lang, T::VibHint)));
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(tr(lang, T::Presets)).color(TEXT_DIM));
+                ui.label(RichText::new(tr(lang, T::Presets)).color(text_dim()));
                 for (label, v) in [
                     (T::VibOff, Vibration::OFF),
                     (T::VibWeak, Vibration { min: 50, max: 100 }),
@@ -1136,7 +1138,7 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.add_sized(
                                 [70.0, 20.0],
-                                egui::Label::new(RichText::new(tr(lang, label)).color(TEXT_DIM)),
+                                egui::Label::new(RichText::new(tr(lang, label)).color(text_dim())),
                             );
                             ui.add(egui::Slider::new(val, 0..=255))
                         })
@@ -1308,7 +1310,7 @@ impl App {
             if let Some(b) = &mut edit.led_brightness {
                 let mut pct = (u32::from(*b) * 100 / 255) as u8;
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(tr(lang, T::Brightness)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::Brightness)).color(text_dim()));
                     if ui
                         .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
                         .changed()
@@ -1345,8 +1347,8 @@ impl App {
             ui.label(RichText::new(tr(lang, T::FnCycle)).strong());
             ui.label(dim(tr(lang, T::FnCycleHint)));
             ui.add_space(4.0);
-            ui.label(RichText::new(tr(lang, T::FnSlot1)).color(TEXT_DIM));
-            ui.label(RichText::new(tr(lang, T::FnSlot3)).color(TEXT_DIM));
+            ui.label(RichText::new(tr(lang, T::FnSlot1)).color(text_dim()));
+            ui.label(RichText::new(tr(lang, T::FnSlot3)).color(text_dim()));
             ui.add_space(6.0);
             ui.label(RichText::new(tr(lang, T::StripCustomTitle)).strong());
             ui.label(dim(tr(lang, T::StripHint)));
@@ -1362,7 +1364,7 @@ impl App {
             };
             ui.add_enabled_ui(!locked, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(tr(lang, T::StripEffect)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::StripEffect)).color(text_dim()));
                     for (e, t) in Effect::ALL.into_iter().zip([
                         T::StripStatic,
                         T::StripBreathing,
@@ -1373,7 +1375,7 @@ impl App {
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(tr(lang, T::StripSpeed)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::StripSpeed)).color(text_dim()));
                     ui.add_enabled(
                         st.effect != Effect::Static,
                         egui::Slider::new(&mut st.speed, 0..=255),
@@ -1388,7 +1390,7 @@ impl App {
                 for &(right, label) in sides {
                     let list = if right { &mut st.right } else { &mut st.left };
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new(tr(lang, label)).color(TEXT_DIM));
+                        ui.label(RichText::new(tr(lang, label)).color(text_dim()));
                         let mut remove = None;
                         for (i, c) in list.iter_mut().enumerate() {
                             ui.color_edit_button_srgb(c);
@@ -1464,12 +1466,12 @@ impl App {
                     let b = egui::Button::new(RichText::new(text))
                         .min_size(Vec2::new(170.0, 48.0))
                         .fill(if i == sel {
-                            theme::ACCENT_SOFT
+                            theme::accent_soft()
                         } else {
-                            theme::BG
+                            theme::bg()
                         })
                         .stroke(if i == sel {
-                            Stroke::new(1.0, ACCENT)
+                            Stroke::new(1.0, accent())
                         } else {
                             Stroke::NONE
                         });
@@ -1544,10 +1546,11 @@ impl App {
                                             "{} ✕",
                                             SLOT_NAMES[k].unwrap_or("?")
                                         ))
-                                        .color(Color32::WHITE),
+                                        .color(theme::text()),
                                     )
-                                    .fill(theme::ACCENT_SOFT)
-                                    .small();
+                                    .fill(theme::accent_soft())
+                                    .small()
+                                    .corner_radius(theme::CAPSULE);
                                     if ui.add(chip).clicked() {
                                         st.inputs &= !(1 << k);
                                     }
@@ -1586,9 +1589,9 @@ impl App {
                                     d => format!("{label} {}", d.arrow()),
                                 };
                                 let col = if cur == StickDir::Center {
-                                    TEXT_DIM
+                                    text_dim()
                                 } else {
-                                    OK
+                                    ok()
                                 };
                                 egui::ComboBox::from_id_salt(("stick", i, axis))
                                     .selected_text(RichText::new(text).color(col))
@@ -1751,10 +1754,10 @@ impl App {
                 .num_columns(2)
                 .spacing([20.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label(RichText::new(tr(lang, T::Version)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::Version)).color(text_dim()));
                     ui.label(format!("PadTune {}", env!("CARGO_PKG_VERSION")));
                     ui.end_row();
-                    ui.label(RichText::new(tr(lang, T::ConfigFolder)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::ConfigFolder)).color(text_dim()));
                     let dir = config::config_dir();
                     if ui
                         .link(dir.display().to_string())
@@ -1765,13 +1768,13 @@ impl App {
                         super::desktop::open_external(&dir.display().to_string());
                     }
                     ui.end_row();
-                    ui.label(RichText::new(tr(lang, T::Repository)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::Repository)).color(text_dim()));
                     let repo = env!("CARGO_PKG_REPOSITORY");
                     if ui.link(repo).clicked() {
                         super::desktop::open_external(repo);
                     }
                     ui.end_row();
-                    ui.label(RichText::new(tr(lang, T::LicenseLabel)).color(TEXT_DIM));
+                    ui.label(RichText::new(tr(lang, T::LicenseLabel)).color(text_dim()));
                     ui.label("MIT");
                     ui.end_row();
                 });
@@ -1885,6 +1888,7 @@ impl eframe::App for App {
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        theme::sync(ctx);
         self.poll_worker();
         self.sync_strip_with_logo();
         // Test hook: close the window after N seconds (tray behaviour checks).
@@ -1919,8 +1923,8 @@ impl eframe::App for App {
             .exact_size(210.0)
             .frame(
                 egui::Frame::new()
-                    .fill(theme::BG)
-                    .inner_margin(egui::Margin::same(10)),
+                    .fill(theme::surface())
+                    .inner_margin(egui::Margin::same(8)),
             )
             .show(ui, |ui| self.sidebar(ui));
         egui::CentralPanel::default_margins().show(ui, |ui| {
@@ -2010,7 +2014,7 @@ fn macro_timeline(ui: &mut egui::Ui, m: &Macro) {
     let (resp, painter) =
         ui.allocate_painter(Vec2::new(ui.available_width(), 18.0), egui::Sense::hover());
     let r = resp.rect;
-    painter.rect_filled(r, 4.0, theme::BG);
+    painter.rect_filled(r, 9.0, theme::track());
     let total: u32 = m.steps.iter().map(|s| s.duration_ms).sum::<u32>().max(1);
     let mut x = r.left();
     for s in &m.steps {
@@ -2020,10 +2024,10 @@ fn macro_timeline(ui: &mut egui::Ui, m: &Macro) {
             Vec2::new((w - 1.0).max(1.0), r.height()),
         );
         if s.inputs != 0 {
-            painter.rect_filled(rect, 3.0, ACCENT);
+            painter.rect_filled(rect, 3.0, accent());
         } else if s.analog != [0; 4] {
             // Stick movement only.
-            painter.rect_filled(rect, 3.0, OK.gamma_multiply(0.7));
+            painter.rect_filled(rect, 3.0, ok().gamma_multiply(0.7));
         }
         x += w;
     }
@@ -2118,21 +2122,21 @@ const FEATURES: &[Feature] = &[
 ];
 
 fn feature_body(ui: &mut egui::Ui, lang: Lang, f: &Feature) {
-    ui.label(RichText::new(tr(lang, f.desc)).color(TEXT_DIM));
+    ui.label(RichText::new(tr(lang, f.desc)).color(text_dim()));
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
         ui.label(
             RichText::new(format!("{}:", tr(lang, T::HowToStart)))
                 .small()
-                .color(TEXT_DIM),
+                .color(text_dim()),
         );
-        ui.label(RichText::new(tr(lang, f.combo)).strong().color(ACCENT));
+        ui.label(RichText::new(tr(lang, f.combo)).strong().color(accent()));
     });
     if f.tentative {
         ui.label(
             RichText::new(format!("({})", tr(lang, T::ToConfirm)))
                 .small()
-                .color(WARN),
+                .color(warn()),
         );
     }
 }
@@ -2146,7 +2150,7 @@ fn visible_slots(_marker: &str) -> Vec<usize> {
 }
 
 fn row(ui: &mut egui::Ui, k: &str, v: &str) {
-    ui.label(RichText::new(k).color(TEXT_DIM));
+    ui.label(RichText::new(k).color(text_dim()));
     ui.label(RichText::new(v).strong());
     ui.end_row();
 }
@@ -2273,8 +2277,8 @@ fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>, axes: (&str, &str
     let size = Vec2::splat(ui.available_width().min(320.0));
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::hover());
     let r = resp.rect;
-    painter.rect_filled(r, 8.0, theme::BG);
-    let grid = Stroke::new(1.0, Color32::from_gray(45));
+    painter.rect_filled(r, 12.0, theme::track());
+    let grid = Stroke::new(1.0, text_dim().gamma_multiply(0.35));
     for i in 1..4 {
         let f = i as f32 / 4.0;
         painter.line_segment(
@@ -2305,17 +2309,17 @@ fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>, axes: (&str, &str
     ];
     painter.line_segment(
         [p(0, 0), p(100, 100)],
-        Stroke::new(1.0, Color32::from_gray(70)),
+        Stroke::new(1.0, text_dim().gamma_multiply(0.6)),
     );
-    painter.line(pts, Stroke::new(3.0, ACCENT));
+    painter.line(pts, Stroke::new(3.0, accent()));
     for (x, y) in [c.point_a, c.point_b] {
-        painter.circle_filled(p(x, y), 6.0, Color32::WHITE);
+        painter.circle_filled(p(x, y), 6.0, theme::text());
     }
     if let Some(m) = live {
         let x = r.left() + r.width() * m;
         painter.line_segment(
             [egui::pos2(x, r.top()), egui::pos2(x, r.bottom())],
-            Stroke::new(1.5, OK),
+            Stroke::new(1.5, ok()),
         );
     }
     // Axis captions: X = how far the stick is pushed, Y = what the game gets.
@@ -2325,14 +2329,14 @@ fn curve_plot(ui: &mut egui::Ui, c: &Curve, live: Option<f32>, axes: (&str, &str
         egui::Align2::LEFT_BOTTOM,
         format!("{} →", axes.0),
         font.clone(),
-        TEXT_DIM,
+        text_dim(),
     );
     painter.text(
         r.left_top() + Vec2::new(6.0, 4.0),
         egui::Align2::LEFT_TOP,
         format!("↑ {}", axes.1),
         font,
-        TEXT_DIM,
+        text_dim(),
     );
 }
 
@@ -2340,10 +2344,10 @@ fn trigger_bar(ui: &mut egui::Ui, t: &Trigger, live: Option<f32>) {
     let (resp, painter) =
         ui.allocate_painter(Vec2::new(ui.available_width(), 22.0), egui::Sense::hover());
     let r = resp.rect;
-    painter.rect_filled(r, 6.0, theme::BG);
+    painter.rect_filled(r, 11.0, theme::track());
     let x = |v: u8| r.left() + r.width() * f32::from(v) / 100.0;
     let active = egui::Rect::from_x_y_ranges(x(t.start)..=x(t.end), r.y_range());
-    painter.rect_filled(active, 6.0, ACCENT);
+    painter.rect_filled(active, 11.0, accent());
     if let Some(v) = live {
         let lx = r.left() + r.width() * v.clamp(0.0, 1.0);
         painter.line_segment(
@@ -2351,14 +2355,14 @@ fn trigger_bar(ui: &mut egui::Ui, t: &Trigger, live: Option<f32>) {
                 egui::pos2(lx, r.top() - 3.0),
                 egui::pos2(lx, r.bottom() + 3.0),
             ],
-            Stroke::new(3.0, OK),
+            Stroke::new(3.0, ok()),
         );
         painter.text(
             r.right_center() + egui::vec2(-6.0, 0.0),
             egui::Align2::RIGHT_CENTER,
             format!("{:.0}%", v * 100.0),
             egui::FontId::monospace(12.0),
-            Color32::WHITE,
+            theme::text(),
         );
     }
 }
