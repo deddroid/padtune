@@ -83,9 +83,11 @@ pub fn decode_step(payload: &[u8]) -> Result<Step> {
 
 /// Bits of one stick's edge flags in circular order, starting from the
 /// sector that comes first in the logged rotation. Combinations of two
-/// neighbours are the diagonals.
-const HIGH_NIBBLE: [u8; 4] = [0x2, 0x8, 0x1, 0x4];
-const LOW_NIBBLE: [u8; 4] = [0x8, 0x2, 0x4, 0x1];
+/// neighbours are the diagonals. The low nibble is the left stick, the high
+/// nibble the right one (verified: rotating the left stick alone lit the low
+/// nibble).
+const LEFT_STICK_BITS: [u8; 4] = [0x8, 0x2, 0x4, 0x1];
+const RIGHT_STICK_BITS: [u8; 4] = [0x2, 0x8, 0x1, 0x4];
 /// Byte 2 of the report: trigger at full travel.
 const TRIGGER_BITS: [u8; 2] = [0x20, 0x40];
 
@@ -119,8 +121,8 @@ pub fn decode_progress(payload: &[u8]) -> Result<Progress> {
     };
     Ok(Progress {
         sectors: [
-            sector(edges >> 4, HIGH_NIBBLE),
-            sector(edges & 0x0f, LOW_NIBBLE),
+            sector(edges & 0x0f, LEFT_STICK_BITS),
+            sector(edges >> 4, RIGHT_STICK_BITS),
         ],
         triggers: TRIGGER_BITS.map(|b| triggers & b != 0),
     })
@@ -222,13 +224,22 @@ mod tests {
                 t.update(decode_progress(&[0, 0, 0, 0, e]).unwrap());
             }
         }
-        assert_eq!(t.laps, [GOAL, 0]);
-        assert_eq!(t.seen[0], 0);
+        assert_eq!(t.laps, [0, GOAL]);
+        assert_eq!(t.seen[1], 0);
         for _ in 0..GOAL {
             t.update(decode_progress(&[0, 0, 0x60, 0, 0]).unwrap());
             t.update(decode_progress(&[0, 0, 0x00, 0, 0]).unwrap());
         }
         assert_eq!(t.presses, [GOAL, GOAL]);
-        assert!(!t.complete(), "the second stick has no laps");
+        assert!(!t.complete(), "the left stick has no laps");
+    }
+
+    // The left stick alone moves the low nibble, the right stick the high one.
+    #[test]
+    fn low_nibble_is_the_left_stick() {
+        let left = decode_progress(&[0, 0, 0, 0, 0x08]).unwrap();
+        assert_eq!(left.sectors, [Some(0), None]);
+        let right = decode_progress(&[0, 0, 0, 0, 0x20]).unwrap();
+        assert_eq!(right.sectors, [None, Some(0)]);
     }
 }
