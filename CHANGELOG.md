@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-08
+
 ### Changed
 - Calibration lives in the Sticks tab only (the controller calibrates sticks
   and triggers in one run); the Triggers tab points to it.
