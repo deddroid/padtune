@@ -438,7 +438,7 @@ impl App {
             ui.label(
                 RichText::new("PadTune")
                     .strong()
-                    .size(18.0)
+                    .font(theme::title(22.0))
                     .color(theme::text()),
             );
         });
@@ -847,7 +847,11 @@ impl App {
         });
         ui.add_space(10.0);
         card(ui, |ui| {
-            ui.label(RichText::new(tr(lang, T::Functions)).strong().size(17.0));
+            ui.label(
+                RichText::new(tr(lang, T::Functions))
+                    .strong()
+                    .font(theme::title(19.0)),
+            );
             ui.label(dim(tr(lang, T::FunctionsHint)));
             ui.add_space(6.0);
             let cols = if ui.available_width() > 700.0 { 3 } else { 2 };
