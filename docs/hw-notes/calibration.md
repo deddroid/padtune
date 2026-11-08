@@ -59,11 +59,16 @@ opcode) without `D2` being on. They are progress flags, not key bits:
 * The directions were logged one at a time on a second run (2026-11-08); the
   first run's rotation, `20 a0 80 90 10 50 40 60`, was counter-clockwise from
   the bottom.
-* byte 2: `20` and `40` are the two triggers at full travel, `60` both.
+* bytes 0..3: the usual key bits (u32 BE, key slots as in the key report).
+  The `20`/`40` seen in byte 2 on the first run are L3 and R3 (slots 13, 14),
+  not the triggers: PadTune counted them as LT/RT until the user noticed that
+  clicking the sticks filled the trigger dots. LT and RT are slots 8 and 9
+  (byte 2 `01`, `02`).
 * Sticks (HW, 2026-11-08): rotating the left stick alone in PadTune lit the
   ring of the other stick until the nibbles were swapped, so low = left.
-* Which trigger owns `20` and which `40` is ipotesi (PadTune assumes
-  `20` = LT).
+* Whether LT/RT key bits are set during the run at full travel or at a
+  lower threshold is not measured yet (ipotesi: same threshold as the key
+  report).
 
 ## Result (HW)
 
@@ -90,4 +95,6 @@ carry no raw motion data, only its effect on the sticks once it is mapped.
 
 * Meaning of step `05`, if it exists, and of a failed run's reply.
 * Whether gamepad output pauses during the sticks run, as it does with `D2`.
-* Trigger ownership of the progress flags (LT/RT).
+* What the controller replies after END when the sticks were not rotated
+  (PadTune reported a missing confirmation once; it now logs every step to
+  stderr).

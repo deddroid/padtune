@@ -265,6 +265,8 @@ strings! {
     CalDone => "Calibration saved.", "Calibrazione salvata.";
     CalLost => "The controller did not confirm the calibration. Try again.", "Il controller non ha confermato la calibrazione. Riprova.";
     CalCancel => "Cancel", "Annulla";
+    CalOnSticksTab => "The controller calibrates the triggers together with the sticks: start it from the Sticks tab.", "Il controller calibra i grilletti insieme agli stick: avviala dalla scheda Stick.";
+    OpenSticksTab => "Open the Sticks tab", "Apri la scheda Stick";
     GyroTitle => "Gyroscope", "Giroscopio";
     GyroIntro => "Lay the controller on a level desk and do not touch it while it calibrates (about 5 s).", "Appoggia il controller su un piano e non toccarlo durante la calibrazione (circa 5 s).";
     GyroStart => "Calibrate gyroscope", "Calibra giroscopio";

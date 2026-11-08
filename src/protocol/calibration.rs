@@ -4,8 +4,8 @@
 //!
 //! Sticks and triggers: send [`start`], let the user rotate both sticks along
 //! the edge and pull both triggers fully, then send [`finish`]. Meanwhile the
-//! controller pushes `02` reports that carry [`Progress`] flags instead of
-//! key bits. The gyroscope run needs only [`start`]: it ends by itself after
+//! controller pushes `02` reports: bytes 0..4 are the usual key bits, byte 4
+//! holds the sticks' edge flags (see [`Progress`]). The gyroscope run needs only [`start`]: it ends by itself after
 //! about 5 s, and [`finish`] cancels it.
 
 use super::frame::{REPORT_LEN, short};
@@ -87,8 +87,9 @@ pub fn decode_step(payload: &[u8]) -> Result<Step> {
 /// (verified one direction at a time on a Rainbow 2 Pro). Sector `0` is up
 /// and the sectors go clockwise.
 const EDGE_BITS: [u8; 4] = [0x1, 0x8, 0x2, 0x4];
-/// Byte 2 of the report: trigger at full travel.
-const TRIGGER_BITS: [u8; 2] = [0x20, 0x40];
+/// Key bits of LT and RT in the first four bytes (key slots 8 and 9, as in
+/// the key report). Slots 13 and 14 next to them are L3 and R3.
+const TRIGGER_KEYS: [u32; 2] = [1 << 8, 1 << 9];
 
 /// Edge sector (0..8, circular) of a stick from its 4 flag bits; `None`
 /// while the stick is away from the edge.
@@ -115,15 +116,16 @@ pub struct Progress {
 }
 
 pub fn decode_progress(payload: &[u8]) -> Result<Progress> {
-    let [_, _, triggers, _, edges, ..] = *payload else {
+    let [k0, k1, k2, k3, edges, ..] = *payload else {
         return Err(Error::Protocol("calibration progress too short".into()));
     };
+    let keys = u32::from_be_bytes([k0, k1, k2, k3]);
     Ok(Progress {
         sectors: [
             sector(edges & 0x0f, EDGE_BITS),
             sector(edges >> 4, EDGE_BITS),
         ],
-        triggers: TRIGGER_BITS.map(|b| triggers & b != 0),
+        triggers: TRIGGER_KEYS.map(|b| keys & b != 0),
     })
 }
 
@@ -227,7 +229,7 @@ mod tests {
         assert_eq!(t.laps, [0, GOAL]);
         assert_eq!(t.seen[1], 0);
         for _ in 0..GOAL {
-            t.update(decode_progress(&[0, 0, 0x60, 0, 0]).unwrap());
+            t.update(decode_progress(&[0, 0, 0x03, 0, 0]).unwrap());
             t.update(decode_progress(&[0, 0, 0x00, 0, 0]).unwrap());
         }
         assert_eq!(t.presses, [GOAL, GOAL]);
@@ -235,6 +237,15 @@ mod tests {
     }
 
     // The left stick alone moves the low nibble, the right stick the high one.
+    #[test]
+    fn stick_clicks_are_not_triggers() {
+        // L3 + R3 (slots 13, 14): byte 2 = 0x60.
+        let p = decode_progress(&[0, 0, 0x60, 0, 0]).unwrap();
+        assert_eq!(p.triggers, [false, false]);
+        let lt = decode_progress(&[0, 0, 0x01, 0, 0]).unwrap();
+        assert_eq!(lt.triggers, [true, false]);
+    }
+
     #[test]
     fn single_directions_from_the_hardware_log() {
         // Up, right, down, left, one at a time: right stick, then left.

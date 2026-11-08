@@ -169,10 +169,9 @@ colour. Full notes: [hw-notes/light-strip-re.md](hw-notes/light-strip-re.md).
 `1B` starts and ends the on-controller calibration (HW, both targets).
 Sticks and triggers: send start, let the user rotate both sticks along the
 edge and pull both triggers fully, then send end. While it runs, the
-controller pushes `02` reports that are progress flags, not key bits: byte 4
-holds the edge sectors reached by each stick (low nibble left, high nibble
-right, HW), byte 2
-`20`/`40` the triggers at full travel. The gyroscope run needs only start: the
+controller pushes `02` reports: bytes 0..3 are the usual key bits (LT, RT
+are slots 8, 9), byte 4 holds where each stick is at the edge (low nibble
+left, high nibble right; up `1`, right `8`, down `2`, left `4`, HW). The gyroscope run needs only start: the
 controller lies flat and replies `01 04 00` after about 5 s by itself.
 Calibration data is not part of the profile (`D6` unchanged). Full log and
 results: [hw-notes/calibration.md](hw-notes/calibration.md).

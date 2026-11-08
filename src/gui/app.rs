@@ -978,7 +978,7 @@ impl App {
         }
     }
 
-    /// Sticks and triggers calibration, shown in both tabs.
+    /// Sticks and triggers calibration (the controller does both in one run).
     fn calibration_card(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         card(ui, |ui| {
@@ -1329,7 +1329,15 @@ impl App {
             }
         });
         ui.add_space(8.0);
-        self.calibration_card(ui);
+        let lang = self.lang();
+        card(ui, |ui| {
+            ui.label(RichText::new(tr(lang, T::FCalT)).strong());
+            ui.label(dim(tr(lang, T::CalOnSticksTab)));
+            ui.add_space(4.0);
+            if ui.button(tr(lang, T::OpenSticksTab)).clicked() {
+                self.tab = Tab::Sticks;
+            }
+        });
     }
 
     fn page_vibration(&mut self, ui: &mut egui::Ui) {
