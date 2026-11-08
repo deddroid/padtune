@@ -42,7 +42,7 @@ pub enum Event {
     IdleDongle(bool),
     /// Pressed buttons from the controller's live key report (slot bits).
     Keys(u32),
-    /// A calibration reply; [`Step::is_last`] closes the run.
+    /// A calibration reply; [`Step::outcome`] tells when the run is over.
     CalibrationStep(Step),
     /// Stick and trigger positions pushed during the sticks run.
     CalibrationProgress(Progress),
@@ -190,7 +190,7 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                                         "padtune: calibration {:?} step {:02x}",
                                         step.target, step.step
                                     );
-                                    if step.is_last() {
+                                    if step.outcome().is_some() {
                                         calibrating = None;
                                     }
                                     emit(Event::CalibrationStep(step));

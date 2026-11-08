@@ -179,6 +179,8 @@ enum Run {
     /// Sticks only: end sent, waiting for the controller to store it.
     Saving,
     Done,
+    /// The controller rejected the run.
+    Failed,
     /// No closing reply, or the controller went away.
     Lost,
 }
@@ -452,8 +454,10 @@ impl App {
                         Target::Sticks => &mut self.cal_sticks,
                         Target::Gyro => &mut self.cal_gyro,
                     };
-                    if step.is_last() && run.busy() {
-                        *run = Run::Done;
+                    if run.busy()
+                        && let Some(ok) = step.outcome()
+                    {
+                        *run = if ok { Run::Done } else { Run::Failed };
                     }
                 }
                 Event::CalibrationLost => self.calibration_lost(),
@@ -1033,6 +1037,9 @@ impl App {
                                 RichText::new(format!("✔ {}", tr(lang, T::CalDone))).color(ok()),
                             );
                         }
+                        Run::Failed => {
+                            ui.label(RichText::new(tr(lang, T::CalFailed)).color(err()));
+                        }
                         Run::Lost => {
                             ui.label(RichText::new(tr(lang, T::CalLost)).color(err()));
                         }
@@ -1109,6 +1116,9 @@ impl App {
             match self.cal_gyro {
                 Run::Done => {
                     ui.label(RichText::new(format!("✔ {}", tr(lang, T::GyroDone))).color(ok()));
+                }
+                Run::Failed => {
+                    ui.label(RichText::new(tr(lang, T::GyroFailed)).color(err()));
                 }
                 Run::Lost => {
                     ui.label(RichText::new(tr(lang, T::CalLost)).color(err()));
