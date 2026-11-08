@@ -16,8 +16,8 @@ works on any PC or console afterwards.
 | | |
 |---|---|
 | **Buttons** | Remap any button to another button or to a keyboard key (with modifiers), disable it, per-button **turbo** and turbo speed. Click the button on a drawing of your controller. |
-| **Sticks** | Response curve editor (dead zone, anti-dead zone, two curve points, outer limit, max output), presets, three curve sets, live stick position. |
-| **Triggers** | Dead zone start, full-press point, hair trigger, live trigger travel. |
+| **Sticks** | Response curve editor (dead zone, anti-dead zone, two curve points, outer limit, max output), presets, three curve sets, live stick position. Stick and trigger calibration; gyroscope: which stick it moves, calibration. |
+| **Triggers** | Dead zone start, full-press point, hair trigger, live trigger travel, calibration. |
 | **Lights** | Light-strip effect (static, breathing, gradient, flicker; speed, brightness, up to 7 colours per side, or synced with the logo), strip brightness, HOME logo colour with intensity, factory defaults with one click. |
 | **Macros** | Edit the four on-board macros step by step (buttons held, duration), bind them to M1/M2. |
 | **Polling rate** | Read and set 250 / 500 / 1000 / 2000 Hz. |

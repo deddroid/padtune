@@ -456,3 +456,58 @@ pub fn stick_view(ui: &mut egui::Ui, pos: (f32, f32), deadzone: u8, outer: u8, c
         );
     }
 }
+
+/// Eight edge sectors of a stick during calibration: lit when reached in
+/// the current lap, with the laps done in the middle.
+pub fn sector_ring(ui: &mut egui::Ui, label: &str, seen: u8, laps: u8, goal: u8) {
+    let d = 84.0;
+    let (resp, painter) = ui.allocate_painter(Vec2::new(d, d + 18.0), Sense::hover());
+    let c = resp.rect.center_top() + Vec2::new(0.0, d / 2.0);
+    let rad = d * 0.42;
+    let done = laps >= goal;
+    for i in 0..8u8 {
+        // Sector 0 on top, clockwise; a small gap between sectors.
+        let mid = f32::from(i) * std::f32::consts::FRAC_PI_4 - std::f32::consts::FRAC_PI_2;
+        let half = std::f32::consts::FRAC_PI_8 - 0.06;
+        let points = (0..=8)
+            .map(|k| {
+                let a = mid - half + 2.0 * half * k as f32 / 8.0;
+                c + Vec2::new(a.cos(), a.sin()) * rad
+            })
+            .collect();
+        let lit = done || seen & (1 << i) != 0;
+        let colour = if lit { accent() } else { theme::track() };
+        painter.add(egui::Shape::line(points, Stroke::new(9.0, colour)));
+    }
+    painter.text(
+        resp.rect.center_bottom(),
+        Align2::CENTER_BOTTOM,
+        label,
+        FontId::proportional(12.5),
+        text_dim(),
+    );
+    painter.text(
+        c,
+        Align2::CENTER_CENTER,
+        format!("{}/{goal}", laps.min(goal)),
+        FontId::monospace(14.0),
+        if done { ok() } else { theme::text() },
+    );
+}
+
+/// `goal` dots, the first `n` filled.
+pub fn progress_dots(ui: &mut egui::Ui, n: u8, goal: u8) {
+    let r = 5.0;
+    let (resp, painter) = ui.allocate_painter(
+        Vec2::new(f32::from(goal) * 3.0 * r, 2.0 * r + 4.0),
+        Sense::hover(),
+    );
+    for i in 0..goal {
+        let p = resp.rect.left_center() + Vec2::new(r + f32::from(i) * 3.0 * r, 0.0);
+        if i < n {
+            painter.circle_filled(p, r, accent());
+        } else {
+            painter.circle_stroke(p, r - 0.5, Stroke::new(1.0, text_dim()));
+        }
+    }
+}

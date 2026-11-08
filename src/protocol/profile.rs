@@ -28,6 +28,10 @@ pub struct Layout {
     pub curve_stride: usize,
     /// Whether the curve block ends with a stabilisation byte.
     pub curve_has_stabilization: bool,
+    /// Motion mode byte: high nibble sensor mode, low nibble [`GyroStick`].
+    pub motion_mode: usize,
+    /// Gyroscope axis-reversal bits, one pair per stick.
+    pub motion_flags: usize,
     /// Motion (gyro) parameter blocks: offset, count, stride.
     pub motion: (usize, usize, usize),
     pub turbo_mask: usize,
@@ -43,6 +47,8 @@ pub const V36_280: Layout = Layout {
     curves: 0x0e,
     curve_stride: 10,
     curve_has_stabilization: false,
+    motion_mode: 0x4c,
+    motion_flags: 0x53,
     motion: (0x57, 3, 8),
     turbo_mask: 0x74,
     turbo_speed: 0x78,
@@ -57,6 +63,9 @@ pub const V37_484: Layout = Layout {
     curves: 0x0e,
     curve_stride: 44,
     curve_has_stabilization: true,
+    // Same distance from the motion blocks as on 280_v36; not verified.
+    motion_mode: 0x118,
+    motion_flags: 0x11f,
     motion: (0x123, 3, 8),
     turbo_mask: 0x140,
     turbo_speed: 0x144,
@@ -170,6 +179,49 @@ impl KeyMap {
 
 /// Number of vibration motors in the profile.
 pub const VIBRATION_MOTORS: usize = 4;
+
+/// Which stick the gyroscope moves: low nibble of the motion-mode byte.
+/// Left (`01`) verified on a Rainbow 2 Pro; the other values follow the
+/// official tool's list (close, left, right, response).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GyroStick {
+    Off,
+    Left,
+    Right,
+    /// A mode the app does not offer, kept as is (`3` = right stick while
+    /// the response key is held, from the official tool).
+    Other(u8),
+}
+
+impl GyroStick {
+    fn from_nibble(n: u8) -> Self {
+        match n {
+            0 => GyroStick::Off,
+            1 => GyroStick::Left,
+            2 => GyroStick::Right,
+            n => GyroStick::Other(n),
+        }
+    }
+
+    /// Reversal bits (X, Y) of this stick's gyroscope axes, from
+    /// BetterBigBigWonAssistant; left Y verified on a Rainbow 2 Pro.
+    fn invert_bits(self) -> Option<(u8, u8)> {
+        match self {
+            GyroStick::Left => Some((0x02, 0x04)),
+            GyroStick::Right => Some((0x08, 0x10)),
+            _ => None,
+        }
+    }
+
+    fn nibble(self) -> u8 {
+        match self {
+            GyroStick::Off => 0,
+            GyroStick::Left => 1,
+            GyroStick::Right => 2,
+            GyroStick::Other(n) => n & 0x0f,
+        }
+    }
+}
 
 /// Output range of one vibration motor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,6 +377,40 @@ impl Profile {
     }
 
     // ---- motion ----------------------------------------------------------
+
+    pub fn gyro_stick(&self) -> GyroStick {
+        GyroStick::from_nibble(self.raw[self.layout.motion_mode] & 0x0f)
+    }
+
+    /// Whether the gyroscope's X and Y are reversed for the stick it moves;
+    /// `None` when it moves none.
+    pub fn gyro_invert(&self) -> Option<(bool, bool)> {
+        let (x, y) = self.gyro_stick().invert_bits()?;
+        let flags = self.raw[self.layout.motion_flags];
+        Some((flags & x != 0, flags & y != 0))
+    }
+
+    /// Sets the reversal of the stick the gyroscope moves (no-op when off).
+    pub fn set_gyro_invert(&mut self, x: bool, y: bool) {
+        let Some((bx, by)) = self.gyro_stick().invert_bits() else {
+            return;
+        };
+        let flags = &mut self.raw[self.layout.motion_flags];
+        for (bit, on) in [(bx, x), (by, y)] {
+            if on {
+                *flags |= bit;
+            } else {
+                *flags &= !bit;
+            }
+        }
+    }
+
+    /// Sets the stick the gyroscope moves; the sensor mode (high nibble) is
+    /// kept.
+    pub fn set_gyro_stick(&mut self, stick: GyroStick) {
+        let b = &mut self.raw[self.layout.motion_mode];
+        *b = (*b & 0xf0) | stick.nibble();
+    }
 
     /// Raw motion parameter blocks (`h2v_ratio, gyro_sens, gyro_sens, resp_curve, …`).
     pub fn motion_block(&self, index: usize) -> [u8; 8] {
@@ -527,6 +613,36 @@ mod tests {
         assert!((0..KEY_SLOTS).all(|s| p.key(s) == KeyMap::Default));
         // Re-sealing an unmodified profile reproduces it byte for byte.
         assert_eq!(p.to_bytes(), RAINBOW2PRO_FACTORY);
+    }
+
+    // 2026-11-08: 0x4C = 01 made tilting move the left stick end to end.
+    #[test]
+    fn gyro_stick_is_the_low_nibble_of_the_motion_mode() {
+        let mut p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
+        assert_eq!(p.gyro_stick(), GyroStick::Off);
+        p.raw[0x4c] = 0x20;
+        p.set_gyro_stick(GyroStick::Left);
+        assert_eq!(p.raw[0x4c], 0x21);
+        assert_eq!(p.gyro_stick(), GyroStick::Left);
+        p.raw[0x4c] = 0x03;
+        assert_eq!(p.gyro_stick(), GyroStick::Other(3));
+        p.set_gyro_stick(GyroStick::Off);
+        assert_eq!(p.raw[0x4c], 0x00);
+    }
+
+    #[test]
+    fn gyro_invert_uses_the_bits_of_the_moved_stick() {
+        let mut p = Profile::from_bytes(&RAINBOW2PRO_FACTORY).unwrap();
+        assert_eq!(p.gyro_invert(), None);
+        p.set_gyro_invert(true, true);
+        assert_eq!(p.raw[0x53], 0, "nothing to reverse while off");
+        p.set_gyro_stick(GyroStick::Left);
+        p.set_gyro_invert(false, true);
+        assert_eq!(p.raw[0x53], 0x04);
+        p.set_gyro_stick(GyroStick::Right);
+        assert_eq!(p.gyro_invert(), Some((false, false)));
+        p.set_gyro_invert(true, false);
+        assert_eq!(p.raw[0x53], 0x0c, "the left stick's bit is kept");
     }
 
     #[test]

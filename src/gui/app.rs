@@ -12,11 +12,12 @@ use super::worker::{Event, Request, Worker};
 use crate::actions::Snapshot;
 use crate::config::{self, DeviceConfig, NamedProfile, Settings, ThemeMode};
 use crate::i18n::{Lang, T, tr};
+use crate::protocol::calibration::{self as cal, Target, Tracker};
 use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
 use crate::protocol::macros::{LEFT_STICK, Macro, RIGHT_STICK, Step as MacroStep, StickDir};
 use crate::protocol::profile::{Curve, KeyMap, Profile, SLOT_NAMES, TURBO_SPEEDS_HZ, Trigger};
-use crate::protocol::profile::{NO_KEY, VIBRATION_MOTORS, Vibration};
+use crate::protocol::profile::{GyroStick, NO_KEY, VIBRATION_MOTORS, Vibration};
 use crate::protocol::strip::{self, Effect, Strip};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +169,26 @@ struct ScreenshotRun {
     pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// Where a calibration run stands, as shown in the GUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Run {
+    #[default]
+    Idle,
+    /// Started: the user moves the sticks, or the gyroscope measures.
+    Active,
+    /// Sticks only: end sent, waiting for the controller to store it.
+    Saving,
+    Done,
+    /// No closing reply, or the controller went away.
+    Lost,
+}
+
+impl Run {
+    fn busy(self) -> bool {
+        matches!(self, Run::Active | Run::Saving)
+    }
+}
+
 pub struct App {
     worker: Option<Worker>,
     settings: Settings,
@@ -198,6 +219,10 @@ pub struct App {
     pending_rumble: Option<(u16, u16)>,
     /// A vibration-only preview write is in flight: keep the other edits.
     preview_inflight: bool,
+    cal_sticks: Run,
+    cal_gyro: Run,
+    /// Laps and trigger presses of the current sticks run.
+    cal_tracker: Tracker,
 }
 
 fn demo_snapshot() -> Snapshot {
@@ -311,6 +336,9 @@ impl App {
             shell,
             pending_rumble: None,
             preview_inflight: false,
+            cal_sticks: Run::Idle,
+            cal_gyro: Run::Idle,
+            cal_tracker: Tracker::default(),
         };
         if demo {
             app.set_snapshot(demo_snapshot());
@@ -402,7 +430,23 @@ impl App {
                         p.battery = b;
                     }
                 }
+                Event::CalibrationProgress(p) => {
+                    if self.cal_sticks == Run::Active {
+                        self.cal_tracker.update(p);
+                    }
+                }
+                Event::CalibrationStep(step) => {
+                    let run = match step.target {
+                        Target::Sticks => &mut self.cal_sticks,
+                        Target::Gyro => &mut self.cal_gyro,
+                    };
+                    if step.is_last() && run.busy() {
+                        *run = Run::Done;
+                    }
+                }
+                Event::CalibrationLost => self.calibration_lost(),
                 Event::Disconnected(why) => {
+                    self.calibration_lost();
                     let was = self.connected;
                     self.connected = false;
                     if was || why.contains("denied") || why.contains("Permission") {
@@ -901,6 +945,163 @@ impl App {
         self.send(Request::KeyTest(on));
     }
 
+    fn calibration_lost(&mut self) {
+        for run in [&mut self.cal_sticks, &mut self.cal_gyro] {
+            if run.busy() {
+                *run = Run::Lost;
+            }
+        }
+    }
+
+    /// Sticks and triggers calibration, shown in both tabs.
+    fn calibration_card(&mut self, ui: &mut egui::Ui) {
+        let lang = self.lang();
+        card(ui, |ui| {
+            ui.label(RichText::new(tr(lang, T::FCalT)).strong());
+            match self.cal_sticks {
+                Run::Active | Run::Saving => {
+                    ui.label(dim(tr(lang, T::CalHow)));
+                    ui.add_space(4.0);
+                    let t = self.cal_tracker;
+                    ui.horizontal(|ui| {
+                        for (i, name) in [T::LeftStick, T::RightStick].into_iter().enumerate() {
+                            pad::sector_ring(ui, tr(lang, name), t.seen[i], t.laps[i], cal::GOAL);
+                        }
+                        ui.add_space(12.0);
+                        egui::Grid::new("cal-triggers")
+                            .num_columns(2)
+                            .spacing([10.0, 8.0])
+                            .show(ui, |ui| {
+                                for (i, name) in ["LT", "RT"].into_iter().enumerate() {
+                                    ui.label(RichText::new(name).color(text_dim()));
+                                    pad::progress_dots(ui, t.presses[i], cal::GOAL);
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                    ui.add_space(4.0);
+                    if self.cal_sticks == Run::Saving {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(tr(lang, T::CalSaving));
+                        });
+                    } else {
+                        // The end stores whatever was measured: it becomes
+                        // the primary action once every lap and press is in.
+                        let label = RichText::new(tr(lang, T::CalFinish)).strong();
+                        let button = if t.complete() {
+                            egui::Button::new(label.color(Color32::WHITE)).fill(accent())
+                        } else {
+                            egui::Button::new(label)
+                        };
+                        if ui.add(button).clicked() {
+                            self.send(Request::Calibrate(Target::Sticks, false));
+                            self.cal_sticks = Run::Saving;
+                        }
+                    }
+                }
+                state => {
+                    ui.label(dim(tr(lang, T::CalIntro)));
+                    match state {
+                        Run::Done => {
+                            ui.label(
+                                RichText::new(format!("✔ {}", tr(lang, T::CalDone))).color(ok()),
+                            );
+                        }
+                        Run::Lost => {
+                            ui.label(RichText::new(tr(lang, T::CalLost)).color(err()));
+                        }
+                        _ => {}
+                    }
+                    ui.add_space(4.0);
+                    let can = self.connected && !self.cal_gyro.busy();
+                    if ui
+                        .add_enabled(can, egui::Button::new(tr(lang, T::CalStart)))
+                        .clicked()
+                    {
+                        // The run pushes progress on the key-report channel.
+                        if self.key_test {
+                            self.set_key_test(false);
+                        }
+                        self.cal_tracker = Tracker::default();
+                        self.cal_sticks = Run::Active;
+                        self.send(Request::Calibrate(Target::Sticks, true));
+                    }
+                }
+            }
+        });
+    }
+
+    /// Gyroscope: which stick it moves (profile) and its calibration.
+    fn gyro_card(&mut self, ui: &mut egui::Ui) {
+        let lang = self.lang();
+        card(ui, |ui| {
+            ui.label(RichText::new(tr(lang, T::GyroTitle)).strong());
+            if let Some(profile) = self.edit.as_mut().and_then(|e| e.profile.as_mut()) {
+                let mut stick = profile.gyro_stick();
+                let mut options = vec![
+                    (GyroStick::Off, tr(lang, T::GyroOff)),
+                    (GyroStick::Left, tr(lang, T::LeftStick)),
+                    (GyroStick::Right, tr(lang, T::RightStick)),
+                ];
+                // Keep a mode set elsewhere visible instead of a blank value.
+                if let GyroStick::Other(n) = stick {
+                    let name = if n == 3 {
+                        T::GyroResponse
+                    } else {
+                        T::GyroOther
+                    };
+                    options.push((stick, tr(lang, name)));
+                }
+                choice_row(ui, tr(lang, T::GyroMoves), &mut stick, &options);
+                if stick != profile.gyro_stick() {
+                    profile.set_gyro_stick(stick);
+                }
+                if let Some((mut x, mut y)) = profile.gyro_invert() {
+                    let before = (x, y);
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut x, tr(lang, T::GyroInvertX));
+                        ui.checkbox(&mut y, tr(lang, T::GyroInvertY));
+                    });
+                    if (x, y) != before {
+                        profile.set_gyro_invert(x, y);
+                    }
+                }
+                ui.separator();
+            }
+            if self.cal_gyro == Run::Active {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(tr(lang, T::GyroRunning));
+                });
+                if ui.button(tr(lang, T::CalCancel)).clicked() {
+                    self.send(Request::Calibrate(Target::Gyro, false));
+                    self.cal_gyro = Run::Idle;
+                }
+                return;
+            }
+            ui.label(dim(tr(lang, T::GyroIntro)));
+            match self.cal_gyro {
+                Run::Done => {
+                    ui.label(RichText::new(format!("✔ {}", tr(lang, T::GyroDone))).color(ok()));
+                }
+                Run::Lost => {
+                    ui.label(RichText::new(tr(lang, T::CalLost)).color(err()));
+                }
+                _ => {}
+            }
+            ui.add_space(4.0);
+            let can = self.connected && !self.cal_sticks.busy();
+            if ui
+                .add_enabled(can, egui::Button::new(tr(lang, T::GyroStart)))
+                .clicked()
+            {
+                self.cal_gyro = Run::Active;
+                self.send(Request::Calibrate(Target::Gyro, true));
+            }
+        });
+    }
+
     fn page_sticks(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         let (mut right, mut set) = (self.stick_right, self.curve_set);
@@ -1000,7 +1201,7 @@ impl App {
                 }
             });
             card(&mut cols[1], |ui| {
-                ui.spacing_mut().slider_width = (ui.available_width() - 190.0).max(80.0);
+                ui.spacing_mut().slider_width = (ui.available_width() - 230.0).max(80.0);
                 egui::Grid::new("curve")
                     .num_columns(2)
                     .spacing([12.0, 10.0])
@@ -1057,6 +1258,11 @@ impl App {
                 let _ = self.settings.save();
             }
         }
+        ui.add_space(8.0);
+        ui.columns(2, |cols| {
+            self.calibration_card(&mut cols[0]);
+            self.gyro_card(&mut cols[1]);
+        });
     }
 
     fn page_triggers(&mut self, ui: &mut egui::Ui) {
@@ -1077,7 +1283,7 @@ impl App {
                     let before = t;
                     let value = if right { live.rt } else { live.lt };
                     trigger_bar(ui, &t, live.connected.then_some(value));
-                    ui.spacing_mut().slider_width = (ui.available_width() - 190.0).max(80.0);
+                    ui.spacing_mut().slider_width = (ui.available_width() - 230.0).max(80.0);
                     egui::Grid::new(("trig", right))
                         .num_columns(2)
                         .spacing([12.0, 10.0])
@@ -1097,6 +1303,8 @@ impl App {
                 });
             }
         });
+        ui.add_space(8.0);
+        self.calibration_card(ui);
     }
 
     fn page_vibration(&mut self, ui: &mut egui::Ui) {
