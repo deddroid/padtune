@@ -111,10 +111,10 @@ in bytes `[2..4]`.
 | `07`/`08` | 1+1 | RT, same | HW |
 | `0C` | 1 | feature flags (`0x66` factory) | unknown, preserved |
 | `0E` | 6 × 10 | stick curves, L/R interleaved × 3 sets: `01 20`, dead zone, anti dead zone, A.x, A.y, B.x, B.y, outer, max | HW layout, SRC semantics |
-| `4C` | 1 | motion mode: high nibble sensor mode, low nibble stick moved by the gyroscope (`0` off, `1` left, `2` right, `3` right while the response key is held) | HW for `1` (left), see [hw-notes/gyro.md](hw-notes/gyro.md); layout SRC (BBBWA) |
+| `4C` | 1 | motion mode: high nibble sensor mode, low nibble stick moved by the gyroscope (`0` off, `1` left, `2` right, `3` right while the response key is held) | HW for `0`, `1`, `2`; `3` RE order; see [hw-notes/gyro.md](hw-notes/gyro.md); layout SRC (BBBWA) |
 | `4D` | 4 | bitmap (BE, byte-swapped by the official writer); BBBWA: keys of the motion response mode | unknown, preserved |
 | `51`/`52` | 2 | `sensor_r_key[0..1]` (`20 20`) | RE name |
-| `53` | 1 | gyroscope axis reversal: left stick X `02`, Y `04`; right stick X `08`, Y `10` | HW for left Y (`04`); the others SRC (BBBWA) |
+| `53` | 1 | gyroscope axis reversal: left stick X `02`, Y `04`; right stick X `08`, Y `10` | HW for left Y (`04`) and X reversal; the other bits SRC (BBBWA) |
 | `57` | 3 × 8 | motion: `h2v_ratio, gyro_sens, gyro_sens, resp_curve, …` (`0a 3c 3c 2a`) | matches official defaults |
 | `74` | 4 | turbo mask, key-slot bits (BE) | SRC |
 | `78` | 1 | turbo speed: 0 = 5, 1 = 10, 2 = 20 Hz | SRC + manual |

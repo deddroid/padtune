@@ -19,18 +19,20 @@ and the first parameter (`h2v_ratio = 0a`) at `0x57`.
 
 Each write used `D7` with read-back (`padtune restore`), one change at a time.
 The low nibble follows the official tool's list (`option_joystick_sim_close`,
-`_left`, `_right`, `_responsive_right`): `0` off, `1` left (HW), `2` right,
-`3` right stick while the response key is held (RE order, ipotesi). The high
+`_left`, `_right`, `_responsive_right`): `0` off, `1` left, `2` right (all HW, set
+from PadTune), `3` right stick while the response key is held (RE order, ipotesi). The high
 nibble (sensor mode) is `0` here and kept untouched by PadTune.
 
-## Axis reversal `0x53` (HW for left Y, SRC for the rest)
+## Axis reversal `0x53` (HW for Y and X, see below)
 
 BBBWA keeps an axis-flags byte seven bytes after the mode byte: `0x53` here,
 `00` on this controller. Its bits depend on the stick: left X `02`, Y `04`,
 right X `08`, Y `10` (BBBWA also names `01` for the right stick, meaning
 unknown). PadTune exposes them as Invert X / Invert Y for the stick in use. Setting
 left Y (`04`) from PadTune reversed the up/down direction of the left stick
-while tilting (HW); X and the right-stick bits are not tested yet.
+while tilting (HW). Invert X and the right stick were then tried from PadTune
+and behaved as expected (HW, reported by the user; which stick was used for
+Invert X was not recorded).
 
 ## Behaviour (HW)
 

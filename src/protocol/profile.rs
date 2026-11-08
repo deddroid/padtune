@@ -181,7 +181,7 @@ impl KeyMap {
 pub const VIBRATION_MOTORS: usize = 4;
 
 /// Which stick the gyroscope moves: low nibble of the motion-mode byte.
-/// Left (`01`) verified on a Rainbow 2 Pro; the other values follow the
+/// Off, left and right verified on a Rainbow 2 Pro; `3` follows the
 /// official tool's list (close, left, right, response).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GyroStick {
@@ -204,7 +204,7 @@ impl GyroStick {
     }
 
     /// Reversal bits (X, Y) of this stick's gyroscope axes, from
-    /// BetterBigBigWonAssistant; left Y verified on a Rainbow 2 Pro.
+    /// BetterBigBigWonAssistant; Y and X reversal verified on a Rainbow 2 Pro.
     fn invert_bits(self) -> Option<(u8, u8)> {
         match self {
             GyroStick::Left => Some((0x02, 0x04)),
