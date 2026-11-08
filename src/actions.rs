@@ -179,6 +179,9 @@ pub fn remember_applied(dev: &Device, delta: &DeviceConfig) {
     if let Some(uuid) = fetch(dev, commands::get_uuid(), commands::decode_uuid) {
         let mut state = crate::config::State::load();
         state.devices.entry(uuid).or_default().merge(delta);
+        // Best effort: the state file only caches write-only settings for the
+        // GUI; failing to persist it must not fail an apply the controller
+        // has already acknowledged.
         let _ = state.save();
     }
 }
