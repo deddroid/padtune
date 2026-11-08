@@ -41,28 +41,52 @@ The controller answers with `1B` frames whose payload is `[TT, step, 00]`:
 | | +5.0 s | `01 04 00` |
 
 The gyroscope run finishes by itself in about 5 s with no END frame, which
-matches the official tool (it only ever sends cancel). Ipotesi on the steps:
-`01` accepted, `02` sampling, `03` waiting for the user's moves (sticks only),
-`04` finished, `06` stored. The gyroscope never sends `06`.
+matches the official tool (it only ever sends cancel).
+
+What the steps mean comes from the official tool's reply handlers
+(`CCalibrationRockerVirtualWnd` and `CCalibrationGyroscopeVirtualWnd` in
+`WndMgr.dll`, RE), and matches what was seen here:
+
+| Target | `01` | `02` | `03` | `04` | `05` | `06` |
+|---|---|---|---|---|---|---|
+| Sticks | show the instructions | — | — | checking the result | **calibrated** | **failed** |
+| Gyroscope | started | calibrating | **failed** | **calibrated** | — | — |
+
+**Correction:** the two sticks runs logged above ended with `06`, so the
+controller **rejected** them. Neither had trigger presses: the first one only
+shows L3/R3 clicks in its progress reports, the second one no key at all. Two
+later runs started from PadTune, with both triggers pulled fully, ended with
+`04 05`: calibrated (HW). Pulling the triggers is part of the run.
 
 ## Progress reports during the sticks run (HW)
 
 Between START and END the controller pushes `02` reports (the key-report
 opcode) without `D2` being on. They are progress flags, not key bits:
 
-* byte 4, high nibble: edge sectors reached by the **right** stick. `20`, `80`, `10`,
-  `40` are the four cardinal directions; combinations are diagonals. One full
-  rotation read `20 a0 80 90 10 50 40 60`.
-* byte 4, low nibble: the same for the **left** stick (`08`, `02`, `04`, `01`).
-* byte 2: `20` and `40` are the two triggers at full travel, `60` both.
+* byte 4, high nibble: where the **right** stick is at the edge: up `10`,
+  right `80`, down `20`, left `40`; two neighbours together are the diagonal
+  (up-right `90`). A clockwise rotation from the top reads
+  `10 90 80 a0 20 60 40 50`.
+* byte 4, low nibble: the same bits for the **left** stick: up `01`, right
+  `08`, down `02`, left `04`.
+* The directions were logged one at a time on a second run (2026-11-08); the
+  first run's rotation, `20 a0 80 90 10 50 40 60`, was counter-clockwise from
+  the bottom.
+* bytes 0..3: the usual key bits (u32 BE, key slots as in the key report).
+  The `20`/`40` seen in byte 2 on the first run are L3 and R3 (slots 13, 14),
+  not the triggers: PadTune counted them as LT/RT until the user noticed that
+  clicking the sticks filled the trigger dots. LT and RT are slots 8 and 9
+  (byte 2 `01`, `02`).
 * Sticks (HW, 2026-11-08): rotating the left stick alone in PadTune lit the
   ring of the other stick until the nibbles were swapped, so low = left.
-* Which trigger owns `20` and which `40` is ipotesi (PadTune assumes
-  `20` = LT).
+* Whether LT/RT key bits are set during the run at full travel or at a
+  lower threshold is not measured yet (ipotesi: same threshold as the key
+  report).
 
-## Result (HW)
+## Sticks and triggers after the first (rejected) run (HW)
 
-After the sticks run, measured through evdev (`stick_check` and raw reads):
+Measured through evdev (`stick_check` and raw reads). The run was rejected, so
+these values are the calibration the controller already had:
 
 | Axis | At rest | Range |
 |---|---|---|
@@ -83,6 +107,6 @@ carry no raw motion data, only its effect on the sticks once it is mapped.
 
 ## Open points
 
-* Meaning of step `05`, if it exists, and of a failed run's reply.
 * Whether gamepad output pauses during the sticks run, as it does with `D2`.
-* Trigger ownership of the progress flags (LT/RT).
+* Which moves are strictly required for `05` (sticks only, triggers only).
+* The steps `02` and `03` of the sticks run, which the official tool ignores.

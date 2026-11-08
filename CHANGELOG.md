@@ -2,9 +2,26 @@
 
 ## [Unreleased]
 
+### Changed
+- Calibration lives in the Sticks tab only (the controller calibrates sticks
+  and triggers in one run); the Triggers tab points to it.
+
 ### Fixed
-- Calibrate: the left and right stick rings were swapped; rotating the left
-  stick now fills the left ring.
+- Calibrate: the left and right stick rings were swapped and their sectors
+  drawn in the wrong places; rotating the left stick now fills the left ring,
+  and pushing a stick up lights the top of its ring.
+- Calibrate: the LT/RT dots counted L3/R3 clicks; they now count trigger
+  presses.
+- Calibrate: a successful stick calibration was reported as unconfirmed, and
+  a rejected one as saved. PadTune now reads the controller's reply as the
+  official tool does and says when the calibration failed.
+
+### Verified on hardware
+- Rainbow 2 Pro: stick calibration started from PadTune with both triggers
+  pulled ends with step `05`, which the official tool reads as calibrated;
+  `06` means rejected. This corrects 0.3.0: the first run from the PC, with no
+  trigger presses, ended with `06` and was rejected. Gyroscope: `04`
+  calibrated, `03` failed.
 
 ## [0.3.0] - 2026-11-08
 

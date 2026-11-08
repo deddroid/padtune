@@ -4,8 +4,8 @@
 //!
 //! Sticks and triggers: send [`start`], let the user rotate both sticks along
 //! the edge and pull both triggers fully, then send [`finish`]. Meanwhile the
-//! controller pushes `02` reports that carry [`Progress`] flags instead of
-//! key bits. The gyroscope run needs only [`start`]: it ends by itself after
+//! controller pushes `02` reports: bytes 0..4 are the usual key bits, byte 4
+//! holds the sticks' edge flags (see [`Progress`]). The gyroscope run needs only [`start`]: it ends by itself after
 //! about 5 s, and [`finish`] cancels it.
 
 use super::frame::{REPORT_LEN, short};
@@ -31,12 +31,14 @@ impl Target {
         }
     }
 
-    /// Step of the last reply of a run: `06` after the sticks' end,
-    /// `04` when the gyroscope finishes by itself.
-    fn last_step(self) -> u8 {
+    /// Closing steps `(success, failure)`, as the official tool reads them
+    /// (`CCalibrationRockerVirtualWnd` / `CCalibrationGyroscopeVirtualWnd`
+    /// in `WndMgr.dll`): sticks `05` / `06` after the end, gyroscope `04` /
+    /// `03` by itself.
+    fn closing_steps(self) -> (u8, u8) {
         match self {
-            Target::Sticks => 6,
-            Target::Gyro => 4,
+            Target::Sticks => (5, 6),
+            Target::Gyro => (4, 3),
         }
     }
 }
@@ -59,9 +61,15 @@ pub struct Step {
 }
 
 impl Step {
-    /// The run is over: nothing more will come for it.
-    pub fn is_last(self) -> bool {
-        self.step >= self.target.last_step()
+    /// How the run ended: `Some(true)` calibrated, `Some(false)` failed,
+    /// `None` while it is still going.
+    pub fn outcome(self) -> Option<bool> {
+        let (ok, failed) = self.target.closing_steps();
+        match self.step {
+            s if s == ok => Some(true),
+            s if s == failed => Some(false),
+            _ => None,
+        }
     }
 }
 
@@ -81,15 +89,15 @@ pub fn decode_step(payload: &[u8]) -> Result<Step> {
     Ok(Step { target, step })
 }
 
-/// Bits of one stick's edge flags in circular order, starting from the
-/// sector that comes first in the logged rotation. Combinations of two
-/// neighbours are the diagonals. The low nibble is the left stick, the high
-/// nibble the right one (verified: rotating the left stick alone lit the low
-/// nibble).
-const LEFT_STICK_BITS: [u8; 4] = [0x8, 0x2, 0x4, 0x1];
-const RIGHT_STICK_BITS: [u8; 4] = [0x2, 0x8, 0x1, 0x4];
-/// Byte 2 of the report: trigger at full travel.
-const TRIGGER_BITS: [u8; 2] = [0x20, 0x40];
+/// Edge flags of one stick, clockwise from the top: up, right, down, left.
+/// Two neighbours together are the diagonal between them. The low nibble is
+/// the left stick, the high nibble the right one; both use the same bits
+/// (verified one direction at a time on a Rainbow 2 Pro). Sector `0` is up
+/// and the sectors go clockwise.
+const EDGE_BITS: [u8; 4] = [0x1, 0x8, 0x2, 0x4];
+/// Key bits of LT and RT in the first four bytes (key slots 8 and 9, as in
+/// the key report). Slots 13 and 14 next to them are L3 and R3.
+const TRIGGER_KEYS: [u32; 2] = [1 << 8, 1 << 9];
 
 /// Edge sector (0..8, circular) of a stick from its 4 flag bits; `None`
 /// while the stick is away from the edge.
@@ -116,15 +124,16 @@ pub struct Progress {
 }
 
 pub fn decode_progress(payload: &[u8]) -> Result<Progress> {
-    let [_, _, triggers, _, edges, ..] = *payload else {
+    let [k0, k1, k2, k3, edges, ..] = *payload else {
         return Err(Error::Protocol("calibration progress too short".into()));
     };
+    let keys = u32::from_be_bytes([k0, k1, k2, k3]);
     Ok(Progress {
         sectors: [
-            sector(edges & 0x0f, LEFT_STICK_BITS),
-            sector(edges >> 4, RIGHT_STICK_BITS),
+            sector(edges & 0x0f, EDGE_BITS),
+            sector(edges >> 4, EDGE_BITS),
         ],
-        triggers: TRIGGER_BITS.map(|b| triggers & b != 0),
+        triggers: TRIGGER_KEYS.map(|b| keys & b != 0),
     })
 }
 
@@ -189,22 +198,25 @@ mod tests {
         );
     }
 
-    // Replies logged on 2026-11-08.
+    // Replies logged on 2026-11-08, read as the official tool reads them.
     #[test]
-    fn runs_end_on_the_logged_last_step() {
-        let last = |p: [u8; 3]| decode_step(&p).unwrap().is_last();
-        assert!(!last([0, 3, 0]));
-        assert!(!last([0, 4, 0]));
-        assert!(last([0, 6, 0]));
-        assert!(!last([1, 2, 0]));
-        assert!(last([1, 4, 0]));
+    fn closing_steps_tell_success_from_failure() {
+        let outcome = |p: [u8; 3]| decode_step(&p).unwrap().outcome();
+        for running in [[0, 1, 0], [0, 3, 0], [0, 4, 0], [1, 1, 0], [1, 2, 0]] {
+            assert_eq!(outcome(running), None);
+        }
+        assert_eq!(outcome([0, 5, 0]), Some(true), "sticks calibrated");
+        assert_eq!(outcome([0, 6, 0]), Some(false), "sticks failed");
+        assert_eq!(outcome([1, 4, 0]), Some(true), "gyroscope calibrated");
+        assert_eq!(outcome([1, 3, 0]), Some(false), "gyroscope failed");
         assert!(decode_step(&[7, 1, 0]).is_err());
     }
 
     #[test]
-    fn logged_rotations_cover_all_eight_sectors() {
-        let high = [0x20, 0xa0, 0x80, 0x90, 0x10, 0x50, 0x40, 0x60];
-        let low = [0x08, 0x0a, 0x02, 0x06, 0x04, 0x05, 0x01, 0x09];
+    fn logged_clockwise_rotations_go_through_the_sectors_in_order() {
+        // Clockwise from the top, logged on 2026-11-08 (right, then left).
+        let high = [0x10, 0x90, 0x80, 0xa0, 0x20, 0x60, 0x40, 0x50];
+        let low = [0x01, 0x09, 0x08, 0x0a, 0x02, 0x06, 0x04, 0x05];
         for (i, (h, l)) in high.into_iter().zip(low).enumerate() {
             let p = decode_progress(&[0, 0, 0, 0, h | l]).unwrap();
             assert_eq!(p.sectors, [Some(i as u8), Some(i as u8)]);
@@ -227,7 +239,7 @@ mod tests {
         assert_eq!(t.laps, [0, GOAL]);
         assert_eq!(t.seen[1], 0);
         for _ in 0..GOAL {
-            t.update(decode_progress(&[0, 0, 0x60, 0, 0]).unwrap());
+            t.update(decode_progress(&[0, 0, 0x03, 0, 0]).unwrap());
             t.update(decode_progress(&[0, 0, 0x00, 0, 0]).unwrap());
         }
         assert_eq!(t.presses, [GOAL, GOAL]);
@@ -236,10 +248,27 @@ mod tests {
 
     // The left stick alone moves the low nibble, the right stick the high one.
     #[test]
-    fn low_nibble_is_the_left_stick() {
-        let left = decode_progress(&[0, 0, 0, 0, 0x08]).unwrap();
-        assert_eq!(left.sectors, [Some(0), None]);
-        let right = decode_progress(&[0, 0, 0, 0, 0x20]).unwrap();
-        assert_eq!(right.sectors, [None, Some(0)]);
+    fn stick_clicks_are_not_triggers() {
+        // L3 + R3 (slots 13, 14): byte 2 = 0x60.
+        let p = decode_progress(&[0, 0, 0x60, 0, 0]).unwrap();
+        assert_eq!(p.triggers, [false, false]);
+        let lt = decode_progress(&[0, 0, 0x01, 0, 0]).unwrap();
+        assert_eq!(lt.triggers, [true, false]);
+    }
+
+    #[test]
+    fn single_directions_from_the_hardware_log() {
+        // Up, right, down, left, one at a time: right stick, then left.
+        for (sector, (right, left)) in [
+            (0, (0x10, 0x01)),
+            (2, (0x80, 0x08)),
+            (4, (0x20, 0x02)),
+            (6, (0x40, 0x04)),
+        ] {
+            let r = decode_progress(&[0, 0, 0, 0, right]).unwrap();
+            assert_eq!(r.sectors, [None, Some(sector)]);
+            let l = decode_progress(&[0, 0, 0, 0, left]).unwrap();
+            assert_eq!(l.sectors, [Some(sector), None]);
+        }
     }
 }

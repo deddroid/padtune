@@ -179,6 +179,8 @@ enum Run {
     /// Sticks only: end sent, waiting for the controller to store it.
     Saving,
     Done,
+    /// The controller rejected the run.
+    Failed,
     /// No closing reply, or the controller went away.
     Lost,
 }
@@ -452,8 +454,10 @@ impl App {
                         Target::Sticks => &mut self.cal_sticks,
                         Target::Gyro => &mut self.cal_gyro,
                     };
-                    if step.is_last() && run.busy() {
-                        *run = Run::Done;
+                    if run.busy()
+                        && let Some(ok) = step.outcome()
+                    {
+                        *run = if ok { Run::Done } else { Run::Failed };
                     }
                 }
                 Event::CalibrationLost => self.calibration_lost(),
@@ -978,7 +982,7 @@ impl App {
         }
     }
 
-    /// Sticks and triggers calibration, shown in both tabs.
+    /// Sticks and triggers calibration (the controller does both in one run).
     fn calibration_card(&mut self, ui: &mut egui::Ui) {
         let lang = self.lang();
         card(ui, |ui| {
@@ -1032,6 +1036,9 @@ impl App {
                             ui.label(
                                 RichText::new(format!("✔ {}", tr(lang, T::CalDone))).color(ok()),
                             );
+                        }
+                        Run::Failed => {
+                            ui.label(RichText::new(tr(lang, T::CalFailed)).color(err()));
                         }
                         Run::Lost => {
                             ui.label(RichText::new(tr(lang, T::CalLost)).color(err()));
@@ -1109,6 +1116,9 @@ impl App {
             match self.cal_gyro {
                 Run::Done => {
                     ui.label(RichText::new(format!("✔ {}", tr(lang, T::GyroDone))).color(ok()));
+                }
+                Run::Failed => {
+                    ui.label(RichText::new(tr(lang, T::GyroFailed)).color(err()));
                 }
                 Run::Lost => {
                     ui.label(RichText::new(tr(lang, T::CalLost)).color(err()));
@@ -1329,7 +1339,15 @@ impl App {
             }
         });
         ui.add_space(8.0);
-        self.calibration_card(ui);
+        let lang = self.lang();
+        card(ui, |ui| {
+            ui.label(RichText::new(tr(lang, T::FCalT)).strong());
+            ui.label(dim(tr(lang, T::CalOnSticksTab)));
+            ui.add_space(4.0);
+            if ui.button(tr(lang, T::OpenSticksTab)).clicked() {
+                self.tab = Tab::Sticks;
+            }
+        });
     }
 
     fn page_vibration(&mut self, ui: &mut egui::Ui) {
