@@ -31,12 +31,14 @@ impl Target {
         }
     }
 
-    /// Step of the last reply of a run: `06` after the sticks' end,
-    /// `04` when the gyroscope finishes by itself.
-    fn last_step(self) -> u8 {
+    /// Closing steps `(success, failure)`, as the official tool reads them
+    /// (`CCalibrationRockerVirtualWnd` / `CCalibrationGyroscopeVirtualWnd`
+    /// in `WndMgr.dll`): sticks `05` / `06` after the end, gyroscope `04` /
+    /// `03` by itself.
+    fn closing_steps(self) -> (u8, u8) {
         match self {
-            Target::Sticks => 6,
-            Target::Gyro => 4,
+            Target::Sticks => (5, 6),
+            Target::Gyro => (4, 3),
         }
     }
 }
@@ -59,9 +61,15 @@ pub struct Step {
 }
 
 impl Step {
-    /// The run is over: nothing more will come for it.
-    pub fn is_last(self) -> bool {
-        self.step >= self.target.last_step()
+    /// How the run ended: `Some(true)` calibrated, `Some(false)` failed,
+    /// `None` while it is still going.
+    pub fn outcome(self) -> Option<bool> {
+        let (ok, failed) = self.target.closing_steps();
+        match self.step {
+            s if s == ok => Some(true),
+            s if s == failed => Some(false),
+            _ => None,
+        }
     }
 }
 
@@ -190,15 +198,17 @@ mod tests {
         );
     }
 
-    // Replies logged on 2026-11-08.
+    // Replies logged on 2026-11-08, read as the official tool reads them.
     #[test]
-    fn runs_end_on_the_logged_last_step() {
-        let last = |p: [u8; 3]| decode_step(&p).unwrap().is_last();
-        assert!(!last([0, 3, 0]));
-        assert!(!last([0, 4, 0]));
-        assert!(last([0, 6, 0]));
-        assert!(!last([1, 2, 0]));
-        assert!(last([1, 4, 0]));
+    fn closing_steps_tell_success_from_failure() {
+        let outcome = |p: [u8; 3]| decode_step(&p).unwrap().outcome();
+        for running in [[0, 1, 0], [0, 3, 0], [0, 4, 0], [1, 1, 0], [1, 2, 0]] {
+            assert_eq!(outcome(running), None);
+        }
+        assert_eq!(outcome([0, 5, 0]), Some(true), "sticks calibrated");
+        assert_eq!(outcome([0, 6, 0]), Some(false), "sticks failed");
+        assert_eq!(outcome([1, 4, 0]), Some(true), "gyroscope calibrated");
+        assert_eq!(outcome([1, 3, 0]), Some(false), "gyroscope failed");
         assert!(decode_step(&[7, 1, 0]).is_err());
     }
 

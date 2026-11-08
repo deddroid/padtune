@@ -41,9 +41,22 @@ The controller answers with `1B` frames whose payload is `[TT, step, 00]`:
 | | +5.0 s | `01 04 00` |
 
 The gyroscope run finishes by itself in about 5 s with no END frame, which
-matches the official tool (it only ever sends cancel). Ipotesi on the steps:
-`01` accepted, `02` sampling, `03` waiting for the user's moves (sticks only),
-`04` finished, `06` stored. The gyroscope never sends `06`.
+matches the official tool (it only ever sends cancel).
+
+What the steps mean comes from the official tool's reply handlers
+(`CCalibrationRockerVirtualWnd` and `CCalibrationGyroscopeVirtualWnd` in
+`WndMgr.dll`, RE), and matches what was seen here:
+
+| Target | `01` | `02` | `03` | `04` | `05` | `06` |
+|---|---|---|---|---|---|---|
+| Sticks | show the instructions | — | — | checking the result | **calibrated** | **failed** |
+| Gyroscope | started | calibrating | **failed** | **calibrated** | — | — |
+
+**Correction:** the two sticks runs logged above ended with `06`, so the
+controller **rejected** them. Neither had trigger presses: the first one only
+shows L3/R3 clicks in its progress reports, the second one no key at all. Two
+later runs started from PadTune, with both triggers pulled fully, ended with
+`04 05`: calibrated (HW). Pulling the triggers is part of the run.
 
 ## Progress reports during the sticks run (HW)
 
@@ -70,9 +83,10 @@ opcode) without `D2` being on. They are progress flags, not key bits:
   lower threshold is not measured yet (ipotesi: same threshold as the key
   report).
 
-## Result (HW)
+## Sticks and triggers after the first (rejected) run (HW)
 
-After the sticks run, measured through evdev (`stick_check` and raw reads):
+Measured through evdev (`stick_check` and raw reads). The run was rejected, so
+these values are the calibration the controller already had:
 
 | Axis | At rest | Range |
 |---|---|---|
@@ -93,8 +107,6 @@ carry no raw motion data, only its effect on the sticks once it is mapped.
 
 ## Open points
 
-* Meaning of step `05`, if it exists, and of a failed run's reply.
 * Whether gamepad output pauses during the sticks run, as it does with `D2`.
-* What the controller replies after END when the sticks were not rotated
-  (PadTune reported a missing confirmation once; it now logs every step to
-  stderr).
+* Which moves are strictly required for `05` (sticks only, triggers only).
+* The steps `02` and `03` of the sticks run, which the official tool ignores.
