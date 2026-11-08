@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.0] - 2026-11-08
+
+### Added
+- Light theme: the GUI follows the system theme, with "Carta calda" (light)
+  and "Viola notte" (dark, the app's violet identity). `PADTUNE_THEME=light|dark`
+  forces one.
+- Embedded fonts (SIL Open Font License): Inter for text and controls,
+  Rajdhani for titles, so the interface looks the same on every system.
+
+### Changed
+- Interface polish: consistent rounded corners (rows and cards 12 px, menus 16,
+  window 20, pill-shaped chips), taller rows (32 px), slider rails, plots and
+  the trigger bar on the track colour, status colours readable in both themes.
+- Lower idle CPU use: the GUI's per-frame "modified?" check is about 15×
+  cheaper and the device thread polls 13× less often while the key test is off.
+
+### Verified on hardware
+- Rainbow 2 Pro (ZKM 6): request round trips measured before and after the
+  internal refactor with `examples/bench_io.rs` — unchanged, every request is
+  answered on the controller's fixed 40 ms tick.
+
 ## [0.1.2] - 2026-10-22
 
 ### Fixed

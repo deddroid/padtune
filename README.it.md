@@ -24,7 +24,7 @@ l'interfaccia di configurazione del controller, quindi ogni impostazione resta
 | **Dispositivo** | Modello, firmware, seriale, batteria, cavo USB o dongle 2.4G, test tasti (tutti, anche M1/M2, FN e i tasti frontali), backup/ripristino, impostazioni di fabbrica. |
 | **Profili** | Salva profili con nome e applicali con un clic — vengono inviate solo le parti cambiate. |
 | **Funzioni del controller** | Cosa fa ogni scorciatoia integrata (TURBO, Mapping, MACRO, Configuration, combinazioni con FN, calibrazione, cambio modalità), dal manuale ufficiale. |
-| **Desktop** | Icona nella barra di sistema, avvio con il sistema, istanza unica, inglese e italiano. |
+| **Desktop** | Icona nella barra di sistema, avvio con il sistema, istanza unica, inglese e italiano, segue il tema di sistema (chiaro e scuro). |
 
 ## Compatibilità
 
@@ -106,6 +106,7 @@ padtune monitor 30                # test tasti: stampa ogni pressione
 | `PADTUNE_CONFIG_DIR` | Usa un'altra cartella per impostazioni e profili |
 | `PADTUNE_STATE` | Usa un altro file di stato (ultima configurazione applicata) |
 | `PADTUNE_DEMO=1` | GUI con un Rainbow 2 Pro simulato, senza accesso USB |
+| `PADTUNE_THEME=light\|dark` | Forza il tema chiaro o scuro invece di seguire il sistema |
 | `PADTUNE_SCREENSHOTS=cartella` | Salva uno screenshot di ogni scheda in ogni lingua, poi esce |
 | `PADTUNE_TEST_CLOSE_AFTER=s` | Chiude la finestra dopo `s` secondi (test della barra di sistema) |
 
