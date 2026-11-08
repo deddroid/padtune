@@ -257,6 +257,25 @@ strings! {
     FCalT => "Calibration", "Calibrazione";
     FCalD => "Sticks and triggers: orange breathing until done. Gyroscope: keep the controller flat, purple breathing until done.", "Stick e grilletti: luce arancione pulsante fino al termine. Giroscopio: controller in piano, luce viola pulsante fino al termine.";
     FCalC => "View + Menu 3 s · Menu + Share (gyro)", "View + Menu 3 s · Menu + Share (giroscopio)";
+    CalIntro => "Recentres both sticks and relearns the full travel of sticks and triggers. Open the trigger stops first.", "Ricentra gli stick e reimpara la corsa piena di stick e grilletti. Prima apri i fermi dei grilletti.";
+    CalStart => "Calibrate", "Calibra";
+    CalHow => "Rotate both sticks along the edge 3 times, then pull both triggers fully 3 times. Then press Finish.", "Ruota entrambi gli stick lungo il bordo 3 volte, poi premi a fondo entrambi i grilletti 3 volte. Poi premi Termina.";
+    CalFinish => "Finish", "Termina";
+    CalSaving => "Saving…", "Salvataggio…";
+    CalDone => "Calibration saved.", "Calibrazione salvata.";
+    CalLost => "The controller did not confirm the calibration. Try again.", "Il controller non ha confermato la calibrazione. Riprova.";
+    CalCancel => "Cancel", "Annulla";
+    GyroTitle => "Gyroscope", "Giroscopio";
+    GyroIntro => "Lay the controller on a level desk and do not touch it while it calibrates (about 5 s).", "Appoggia il controller su un piano e non toccarlo durante la calibrazione (circa 5 s).";
+    GyroStart => "Calibrate gyroscope", "Calibra giroscopio";
+    GyroRunning => "Calibrating… keep the controller still.", "Calibrazione in corso… tieni fermo il controller.";
+    GyroDone => "Gyroscope calibrated.", "Giroscopio calibrato.";
+    GyroMoves => "Tilting moves", "Inclinando muovi";
+    GyroOff => "Nothing (off)", "Niente (spento)";
+    GyroResponse => "Right stick while a key is held", "Stick destro tenendo un tasto";
+    GyroOther => "Other mode", "Altra modalità";
+    GyroInvertX => "Invert X", "Inverti X";
+    GyroInvertY => "Invert Y", "Inverti Y";
     LiveUnavailable => "Live input not available (gamepad not visible to the system).", "Input live non disponibile (gamepad non visibile al sistema).";
     Error => "Error", "Errore";
 }

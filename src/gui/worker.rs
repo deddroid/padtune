@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crate::actions::{self, Snapshot};
 use crate::config::DeviceConfig;
 use crate::device::Device;
+use crate::protocol::calibration::{self, Progress, Step, Target};
 use crate::protocol::commands::{self, op};
 use crate::protocol::frame::{self, Frame};
 
@@ -22,6 +23,9 @@ pub enum Request {
     /// Turn the controller's key reports on/off (key test). While on, the
     /// controller pauses its normal gamepad output.
     KeyTest(bool),
+    /// Start (`true`) or end a calibration run. Ending the gyroscope run
+    /// cancels it: it finishes by itself.
+    Calibrate(Target, bool),
     /// Switch live key reports off and stop the thread.
     Shutdown,
 }
@@ -35,6 +39,12 @@ pub enum Event {
     IdleDongle(bool),
     /// Pressed buttons from the controller's live key report (slot bits).
     Keys(u32),
+    /// A calibration reply; [`Step::is_last`] closes the run.
+    CalibrationStep(Step),
+    /// Stick and trigger positions pushed during the sticks run.
+    CalibrationProgress(Progress),
+    /// The run got no closing reply in time.
+    CalibrationLost,
     Disconnected(String),
     Applied,
     Message(String),
@@ -77,6 +87,8 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
     let mut keys_wanted = false;
     let mut last_keys = None;
     let mut last_poll = Instant::now();
+    // Calibration run in progress, with the time by which it must end.
+    let mut calibrating: Option<(Target, Instant)> = None;
     let set_keys = |dev: &Option<Device>, on: bool| {
         if let Some(d) = dev {
             let _ = d.request(&commands::set_key_reports(on));
@@ -86,7 +98,7 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
         // Tick fast only while live key reports must be drained; otherwise an
         // idle tick is plenty (battery/hot-plug polls are gated to 3 s below,
         // and a request wakes the loop immediately regardless of the tick).
-        let tick = if keys_wanted {
+        let tick = if keys_wanted || calibrating.is_some() {
             Duration::from_millis(15)
         } else {
             Duration::from_millis(200)
@@ -104,6 +116,35 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                 last_keys = None;
                 emit(Event::Keys(0));
             }
+            Ok(Request::Calibrate(target, begin)) => {
+                // Generous limits: the user moves the sticks for as long as
+                // needed; the gyroscope ends in about 5 s; the end of the
+                // sticks run is answered within milliseconds.
+                let limit = match (target, begin) {
+                    (Target::Sticks, true) => Duration::from_secs(600),
+                    (Target::Gyro, true) => Duration::from_secs(30),
+                    (_, false) => Duration::from_secs(3),
+                };
+                let frame = if begin {
+                    calibration::start(target)
+                } else {
+                    calibration::finish(target)
+                };
+                let sent = connect(&mut dev).and_then(|d| {
+                    if begin {
+                        d.drain()?;
+                    }
+                    d.send(&frame)
+                });
+                match sent {
+                    Ok(()) => calibrating = Some((target, Instant::now() + limit)),
+                    Err(e) => {
+                        calibrating = None;
+                        emit(Event::CalibrationLost);
+                        emit(Event::Error(e.to_string()));
+                    }
+                }
+            }
             Ok(req) => {
                 emit(Event::Busy(true));
                 handle(req, &mut dev, &emit);
@@ -115,19 +156,48 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                 last_poll = Instant::now();
             }
             Err(RecvTimeoutError::Timeout) => {
-                if keys_wanted && let Some(d) = &dev {
+                if (keys_wanted || calibrating.is_some())
+                    && let Some(d) = &dev
+                {
                     while let Ok(Some(r)) = d.recv(Duration::ZERO) {
-                        if let Ok(Frame::Short {
-                            cmd: op::KEY_REPORT,
-                            payload,
-                        }) = frame::parse(&r)
-                            && let Ok(k) = commands::decode_key_report(payload)
-                            && last_keys != Some(k.keys)
-                        {
-                            last_keys = Some(k.keys);
-                            emit(Event::Keys(k.keys));
+                        let Ok(Frame::Short { cmd, payload }) = frame::parse(&r) else {
+                            continue;
+                        };
+                        match cmd {
+                            // During the sticks run `02` carries progress
+                            // flags, not keys.
+                            op::KEY_REPORT if matches!(calibrating, Some((Target::Sticks, _))) => {
+                                if let Ok(p) = calibration::decode_progress(payload) {
+                                    emit(Event::CalibrationProgress(p));
+                                }
+                            }
+                            op::KEY_REPORT if keys_wanted => {
+                                if let Ok(k) = commands::decode_key_report(payload)
+                                    && last_keys != Some(k.keys)
+                                {
+                                    last_keys = Some(k.keys);
+                                    emit(Event::Keys(k.keys));
+                                }
+                            }
+                            calibration::OP => {
+                                if let Ok(step) = calibration::decode_step(payload) {
+                                    if step.is_last() {
+                                        calibrating = None;
+                                    }
+                                    emit(Event::CalibrationStep(step));
+                                }
+                            }
+                            _ => {}
                         }
                     }
+                }
+                if let Some((_, by)) = calibrating {
+                    if Instant::now() > by {
+                        calibrating = None;
+                        emit(Event::CalibrationLost);
+                    }
+                    // A poll would drain the replies of the run.
+                    continue;
                 }
                 if last_poll.elapsed() < Duration::from_secs(3) {
                     continue;
@@ -181,7 +251,7 @@ fn handle(req: Request, dev: &mut Option<Device>, emit: &impl Fn(Event)) {
                 emit(Event::Applied);
                 emit(Event::Snapshot(Box::new(actions::read_snapshot(d)?)));
             }
-            Request::Shutdown | Request::KeyTest(_) => {}
+            Request::Shutdown | Request::KeyTest(_) | Request::Calibrate(..) => {}
             Request::Backup(path) => {
                 let d = connect(dev)?;
                 let p = actions::read_profile(d)?;
