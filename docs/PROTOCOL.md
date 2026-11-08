@@ -68,7 +68,7 @@ bytes `[0..2]`; bytes `[2..4]` hold the blob length, big-endian (HW).
 | `0D` | (pushed, unknown) | — | 5 zero bytes, ~2/s while `D2` is on | HW |
 | `0E` | Save2Device | `a5 05 0e 00 b8` | — | RE (not needed for D7) |
 | `1A` | Reset (factory) | `a5 05 1a 00 c4` | — | RE — **never sent** |
-| `1B` | Calibration | `a5 06 1b PP QQ sum` | — | RE — **never sent** |
+| `1B` | Calibration | `a5 06 1b TT SS sum`: TT `00` sticks+triggers / `01` gyro, SS `01` start / `00` end (sticks) or cancel (gyro) | `[TT, step, 00]`, steps `01 02 03` then `04 06` (sticks), `01 02 04` (gyro) | HW start/end for sticks and start for gyro; see [Calibration](#calibration) |
 | `70` | SetLED (light strip) | `a5 len 70 00 00 00 ZZ MM 00 SS BB ff` + RGB×1..7 + sum | ACK `a5 05 70 00 1a` | HW, see [Light strip](#light-strip) |
 | `70` | SetLEDShow | `a5 04 70 19` | — | RE, never sent |
 | `73` | Get/SetLightingMode | `a5 04 73 1c` | no reply on Rainbow 2 Pro | HW |
@@ -160,6 +160,18 @@ bright 50..255
 HW results: static, breathing, gradient and flicker on both sides; 7 colours in
 one 34-byte frame; breathing/flicker with one colour run once and then hold the
 colour. Full notes: [hw-notes/light-strip-re.md](hw-notes/light-strip-re.md).
+
+## Calibration
+
+`1B` starts and ends the on-controller calibration (HW, both targets).
+Sticks and triggers: send start, let the user rotate both sticks along the
+edge and pull both triggers fully, then send end. While it runs, the
+controller pushes `02` reports that are progress flags, not key bits: byte 4
+holds the edge sectors reached by each stick (one nibble per stick), byte 2
+`20`/`40` the triggers at full travel. The gyroscope run needs only start: the
+controller lies flat and replies `01 04 00` after about 5 s by itself.
+Calibration data is not part of the profile (`D6` unchanged). Full log and
+results: [hw-notes/calibration.md](hw-notes/calibration.md).
 
 ## Not yet decoded
 * Meaning of `D4`, `E1`, `F8` fields, profile bytes `0C`, `4D`, `7C..84`.

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Verified on hardware
+- Rainbow 2 Pro (ZKM 6, USB): stick and trigger calibration and gyroscope
+  calibration started from the PC with command `1B`. After the stick run every
+  axis rests at 0 and reaches full travel, both triggers go from 0 to 255.
+  Details in `docs/hw-notes/calibration.md`.
+
 ## [0.2.1] - 2026-11-08
 
 ### Added
