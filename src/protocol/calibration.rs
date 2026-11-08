@@ -81,13 +81,12 @@ pub fn decode_step(payload: &[u8]) -> Result<Step> {
     Ok(Step { target, step })
 }
 
-/// Bits of one stick's edge flags in circular order, starting from the
-/// sector that comes first in the logged rotation. Combinations of two
-/// neighbours are the diagonals. The low nibble is the left stick, the high
-/// nibble the right one (verified: rotating the left stick alone lit the low
-/// nibble).
-const LEFT_STICK_BITS: [u8; 4] = [0x8, 0x2, 0x4, 0x1];
-const RIGHT_STICK_BITS: [u8; 4] = [0x2, 0x8, 0x1, 0x4];
+/// Edge flags of one stick, clockwise from the top: up, right, down, left.
+/// Two neighbours together are the diagonal between them. The low nibble is
+/// the left stick, the high nibble the right one; both use the same bits
+/// (verified one direction at a time on a Rainbow 2 Pro). Sector `0` is up
+/// and the sectors go clockwise.
+const EDGE_BITS: [u8; 4] = [0x1, 0x8, 0x2, 0x4];
 /// Byte 2 of the report: trigger at full travel.
 const TRIGGER_BITS: [u8; 2] = [0x20, 0x40];
 
@@ -121,8 +120,8 @@ pub fn decode_progress(payload: &[u8]) -> Result<Progress> {
     };
     Ok(Progress {
         sectors: [
-            sector(edges & 0x0f, LEFT_STICK_BITS),
-            sector(edges >> 4, RIGHT_STICK_BITS),
+            sector(edges & 0x0f, EDGE_BITS),
+            sector(edges >> 4, EDGE_BITS),
         ],
         triggers: TRIGGER_BITS.map(|b| triggers & b != 0),
     })
@@ -202,9 +201,10 @@ mod tests {
     }
 
     #[test]
-    fn logged_rotations_cover_all_eight_sectors() {
-        let high = [0x20, 0xa0, 0x80, 0x90, 0x10, 0x50, 0x40, 0x60];
-        let low = [0x08, 0x0a, 0x02, 0x06, 0x04, 0x05, 0x01, 0x09];
+    fn logged_clockwise_rotations_go_through_the_sectors_in_order() {
+        // Clockwise from the top, logged on 2026-11-08 (right, then left).
+        let high = [0x10, 0x90, 0x80, 0xa0, 0x20, 0x60, 0x40, 0x50];
+        let low = [0x01, 0x09, 0x08, 0x0a, 0x02, 0x06, 0x04, 0x05];
         for (i, (h, l)) in high.into_iter().zip(low).enumerate() {
             let p = decode_progress(&[0, 0, 0, 0, h | l]).unwrap();
             assert_eq!(p.sectors, [Some(i as u8), Some(i as u8)]);
@@ -236,10 +236,18 @@ mod tests {
 
     // The left stick alone moves the low nibble, the right stick the high one.
     #[test]
-    fn low_nibble_is_the_left_stick() {
-        let left = decode_progress(&[0, 0, 0, 0, 0x08]).unwrap();
-        assert_eq!(left.sectors, [Some(0), None]);
-        let right = decode_progress(&[0, 0, 0, 0, 0x20]).unwrap();
-        assert_eq!(right.sectors, [None, Some(0)]);
+    fn single_directions_from_the_hardware_log() {
+        // Up, right, down, left, one at a time: right stick, then left.
+        for (sector, (right, left)) in [
+            (0, (0x10, 0x01)),
+            (2, (0x80, 0x08)),
+            (4, (0x20, 0x02)),
+            (6, (0x40, 0x04)),
+        ] {
+            let r = decode_progress(&[0, 0, 0, 0, right]).unwrap();
+            assert_eq!(r.sectors, [None, Some(sector)]);
+            let l = decode_progress(&[0, 0, 0, 0, left]).unwrap();
+            assert_eq!(l.sectors, [Some(sector), None]);
+        }
     }
 }

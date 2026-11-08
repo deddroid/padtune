@@ -50,10 +50,15 @@ matches the official tool (it only ever sends cancel). Ipotesi on the steps:
 Between START and END the controller pushes `02` reports (the key-report
 opcode) without `D2` being on. They are progress flags, not key bits:
 
-* byte 4, high nibble: edge sectors reached by the **right** stick. `20`, `80`, `10`,
-  `40` are the four cardinal directions; combinations are diagonals. One full
-  rotation read `20 a0 80 90 10 50 40 60`.
-* byte 4, low nibble: the same for the **left** stick (`08`, `02`, `04`, `01`).
+* byte 4, high nibble: where the **right** stick is at the edge: up `10`,
+  right `80`, down `20`, left `40`; two neighbours together are the diagonal
+  (up-right `90`). A clockwise rotation from the top reads
+  `10 90 80 a0 20 60 40 50`.
+* byte 4, low nibble: the same bits for the **left** stick: up `01`, right
+  `08`, down `02`, left `04`.
+* The directions were logged one at a time on a second run (2026-11-08); the
+  first run's rotation, `20 a0 80 90 10 50 40 60`, was counter-clockwise from
+  the bottom.
 * byte 2: `20` and `40` are the two triggers at full travel, `60` both.
 * Sticks (HW, 2026-11-08): rotating the left stick alone in PadTune lit the
   ring of the other stick until the nibbles were swapped, so low = left.
