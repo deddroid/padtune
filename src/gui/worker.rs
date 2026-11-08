@@ -184,6 +184,12 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                             }
                             calibration::OP => {
                                 if let Ok(step) = calibration::decode_step(payload) {
+                                    // Diagnostics: the meaning of steps other
+                                    // than the logged ones is still unknown.
+                                    eprintln!(
+                                        "padtune: calibration {:?} step {:02x}",
+                                        step.target, step.step
+                                    );
                                     if step.is_last() {
                                         calibrating = None;
                                     }
@@ -196,6 +202,7 @@ fn run(rx: Receiver<Request>, tx: Sender<Event>, wake: impl Fn()) {
                 }
                 if let Some((_, by)) = calibrating {
                     if Instant::now() > by {
+                        eprintln!("padtune: calibration got no closing reply in time");
                         calibrating = None;
                         emit(Event::CalibrationLost);
                     }

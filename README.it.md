@@ -17,7 +17,7 @@ l'interfaccia di configurazione del controller, quindi ogni impostazione resta
 |---|---|
 | **Tasti** | Rimappa qualsiasi tasto su un altro tasto o su un tasto della tastiera (con modificatori), disattivalo, **turbo** per tasto e velocità del turbo. Clicca il tasto sul disegno del controller. |
 | **Stick** | Editor della curva (zona morta, anti zona morta, due punti, limite esterno, uscita massima), preset, tre set di curve, posizione dello stick in tempo reale. Calibrazione di stick e grilletti; giroscopio: quale stick muove, calibrazione. |
-| **Grilletti** | Inizio della zona morta, punto di pressione piena, hair trigger, corsa in tempo reale, calibrazione. |
+| **Grilletti** | Inizio della zona morta, punto di pressione piena, hair trigger, corsa in tempo reale (la calibrazione è nella scheda Stick). |
 | **Luci** | Effetto della striscia LED (fisso, respiro, gradiente, lampeggio; velocità, luminosità, fino a 7 colori per lato, oppure sincronizzato con il logo), luminosità della striscia, colore del logo HOME con intensità, valori di fabbrica con un clic. |
 | **Macro** | Modifica le quattro macro del controller passo per passo (tasti premuti, durata) e associale a M1/M2. |
 | **Polling** | Lettura e impostazione a 250 / 500 / 1000 / 2000 Hz. |

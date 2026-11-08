@@ -6,6 +6,12 @@
 - Calibrate: the left and right stick rings were swapped and their sectors
   drawn in the wrong places; rotating the left stick now fills the left ring,
   and pushing a stick up lights the top of its ring.
+- Calibrate: the LT/RT dots counted L3/R3 clicks; they now count trigger
+  presses.
+
+### Changed
+- Calibration lives in the Sticks tab only (the controller calibrates sticks
+  and triggers in one run); the Triggers tab points to it.
 
 ## [0.3.0] - 2026-11-08
 
