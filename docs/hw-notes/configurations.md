@@ -37,6 +37,10 @@ value is stored across power-off but does not select the configuration,
 at boot either. One press of the Configuration key then kept LED 2
 lit and brought `D4` back to `06 01 01`: the key steps from the stored value
 (`0` -> `1`), so the controller does use it, but loads the LEDs and the
-profile only when the key is pressed. **Selecting a configuration from the PC
+profile only when the key is pressed. Second test, from LED 2: `a5 07 d4 06 03 01 8a` (echoed), `D4` read
+`06 03 01` with LED 2 still lit; one key press then lit **LED 1** and `D6`
+returned LED 1's profile, with `D4` at `06 00 01`. So the key always moves to
+the stored index + 1, and a PC can choose which configuration the next press
+selects. **Selecting a configuration from the PC
 is not possible with `D4` alone**; writing it leaves `D4` out of step with
 the LEDs until the next key press.

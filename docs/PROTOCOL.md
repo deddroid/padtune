@@ -60,7 +60,7 @@ bytes `[0..2]`; bytes `[2..4]` hold the blob length, big-endian (HW).
 | `F5` | Get/SetLogoLED | `a5 04 f5 9e`; `a5 0d f5` + 3×RGB + sum | colours echoed | HW: HOME logo colour; **slot 3 = XInput mode**, `000000` = follow the mode colour |
 | `04` | GetDevicePowerInfo | `a5 04 04 ad` | battery %, status | HW |
 | `FA` | GetWirelessFlag | `a5 04 fa a3` | `01` cable / `00` dongle | HW |
-| `D4` | Get/SetGamepadMode | get `a5 04 d4 7d`; set `a5 07 d4 AA BB CC sum` (RE) | `06 CC LL`: `CC` = active on-board configuration `0`..`3` (top LED = 0), `LL` = `01` cable / `00` dongle | HW read; set not tested, see [hw-notes/configurations.md](hw-notes/configurations.md) |
+| `D4` | Get/SetGamepadMode | get `a5 04 d4 7d`; set `a5 07 d4 AA BB CC sum` (RE) | `06 CC LL`: `CC` = active on-board configuration `0`..`3` (top LED = 0), `LL` = `01` cable / `00` dongle | HW: set stores `CC` (echoed) but loads nothing; the next Configuration key press selects `CC + 1`. See [hw-notes/configurations.md](hw-notes/configurations.md) |
 | `E1` | GetDeviceModeInfo | `a5 04 e1 8a` | `6d 06 00 20 00 00` | HW read |
 | `F8` | Get/Set SmartStartStop / SmartTriggerLock | `a5 04 f8 a1` | `01 01 01` | HW read |
 | `D2` | SetReceiveGamepadKeyPressedEvent | `a5 05 d2 01 7d` / `… 00 7c` | echo | HW: **pauses gamepad output** while on |
