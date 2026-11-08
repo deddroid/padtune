@@ -207,6 +207,10 @@ strings! {
     Delete => "Delete", "Elimina";
     NoProfiles => "No saved profiles yet.", "Nessun profilo salvato.";
     Language => "Language", "Lingua";
+    Theme => "Theme", "Tema";
+    ThemeSystem => "System", "Sistema";
+    ThemeLight => "Light", "Chiaro";
+    ThemeDark => "Dark", "Scuro";
     Autostart => "Start with the system", "Avvia con il sistema";
     MinimizeToTray => "Close to tray", "Chiudi nella barra di sistema";
     StartHidden => "Start minimised in tray", "Avvia ridotto nella barra di sistema";

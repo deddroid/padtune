@@ -16,6 +16,8 @@ use eframe::egui::{
 };
 use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
 
+use crate::config::ThemeMode;
+
 /// Font family of titles and headings (Rajdhani).
 pub const TITLE_FAMILY: &str = "titoli";
 
@@ -136,15 +138,23 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(ch(a.r(), b.r()), ch(a.g(), b.g()), ch(a.b(), b.b()))
 }
 
-pub fn apply(ctx: &egui::Context) {
-    // Follow the system; `PADTUNE_THEME=light|dark` forces one (screenshots
-    // and documentation).
-    let preference = match std::env::var("PADTUNE_THEME").ok().as_deref() {
-        Some("light") => egui::ThemePreference::Light,
-        Some("dark") => egui::ThemePreference::Dark,
-        _ => egui::ThemePreference::System,
+/// Applies the user's light/dark choice. `PADTUNE_THEME=light|dark` still
+/// overrides it (screenshots and documentation).
+pub fn set_mode(ctx: &egui::Context, mode: ThemeMode) {
+    let mode = match std::env::var("PADTUNE_THEME").ok().as_deref() {
+        Some("light") => ThemeMode::Light,
+        Some("dark") => ThemeMode::Dark,
+        _ => mode,
     };
-    ctx.set_theme(preference);
+    ctx.set_theme(match mode {
+        ThemeMode::System => egui::ThemePreference::System,
+        ThemeMode::Light => egui::ThemePreference::Light,
+        ThemeMode::Dark => egui::ThemePreference::Dark,
+    });
+}
+
+pub fn apply(ctx: &egui::Context, mode: ThemeMode) {
+    set_mode(ctx, mode);
     ctx.set_visuals_of(Theme::Dark, visuals(&DARK, egui::Visuals::dark()));
     ctx.set_visuals_of(Theme::Light, visuals(&LIGHT, egui::Visuals::light()));
     ctx.all_styles_mut(|s| {

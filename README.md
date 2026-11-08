@@ -24,7 +24,7 @@ works on any PC or console afterwards.
 | **Device** | Model, firmware, serial, battery, USB cable vs 2.4G dongle, key test (every button including M1/M2, FN and the front keys), backup/restore, factory settings. |
 | **Profiles** | Save named profiles and apply them with one click — only the parts that changed are sent. |
 | **Controller functions** | What every on-board shortcut does (TURBO, Mapping, MACRO, Configuration, FN combos, calibration, mode switch), from the official manual. |
-| **Desktop** | Tray icon, start with the system, single instance, English and Italian, follows the system theme (light and dark). |
+| **Desktop** | Tray icon, start with the system, single instance, English and Italian, light, dark or system theme (Settings → Theme). |
 
 ## Compatibility
 
@@ -105,7 +105,7 @@ padtune monitor 30                # key test: prints every button press
 | `PADTUNE_CONFIG_DIR` | Use another settings/profiles directory |
 | `PADTUNE_STATE` | Use another state file (last applied configuration) |
 | `PADTUNE_DEMO=1` | GUI with a built-in Rainbow 2 Pro, no USB access |
-| `PADTUNE_THEME=light\|dark` | Force the light or dark theme instead of following the system |
+| `PADTUNE_THEME=light\|dark` | Force the light or dark theme, overriding Settings → Theme |
 | `PADTUNE_SCREENSHOTS=dir` | Save a screenshot of every tab in every language, then exit |
 | `PADTUNE_TEST_CLOSE_AFTER=s` | Close the window after `s` seconds (tray behaviour tests) |
 

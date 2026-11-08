@@ -10,7 +10,7 @@ use super::pad::{self, Marks};
 use super::theme::{self, accent, card, dim, err, ok, text_dim, warn};
 use super::worker::{Event, Request, Worker};
 use crate::actions::Snapshot;
-use crate::config::{self, DeviceConfig, NamedProfile, Settings};
+use crate::config::{self, DeviceConfig, NamedProfile, Settings, ThemeMode};
 use crate::i18n::{Lang, T, tr};
 use crate::protocol::commands::{POLLING_CODES, polling_hz};
 use crate::protocol::keys::{self, KEYBOARD, MODIFIERS};
@@ -268,8 +268,8 @@ impl App {
         if let Ok(mut c) = shell.ctx.lock() {
             *c = Some(cc.egui_ctx.clone());
         }
-        theme::apply(&cc.egui_ctx);
         let settings = Settings::load();
+        theme::apply(&cc.egui_ctx, settings.theme);
         let shots = std::env::var_os("PADTUNE_SCREENSHOTS").map(|d| {
             let dir = PathBuf::from(d);
             let _ = std::fs::create_dir_all(&dir);
@@ -1737,12 +1737,19 @@ impl App {
         let lang = self.lang();
         let before = self.settings.clone();
         card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(tr(lang, T::Language));
-                for l in Lang::ALL {
-                    ui.selectable_value(&mut self.settings.language, l, l.name());
-                }
-            });
+            let languages = Lang::ALL.map(|l| (l, l.name()));
+            choice_row(
+                ui,
+                tr(lang, T::Language),
+                &mut self.settings.language,
+                &languages,
+            );
+            let themes = [
+                (ThemeMode::System, tr(lang, T::ThemeSystem)),
+                (ThemeMode::Light, tr(lang, T::ThemeLight)),
+                (ThemeMode::Dark, tr(lang, T::ThemeDark)),
+            ];
+            choice_row(ui, tr(lang, T::Theme), &mut self.settings.theme, &themes);
             ui.checkbox(&mut self.settings.autostart, tr(lang, T::Autostart));
             ui.checkbox(
                 &mut self.settings.close_to_tray,
@@ -1785,6 +1792,9 @@ impl App {
             ui.add_space(4.0);
             ui.label(dim(tr(lang, T::Unofficial)));
         });
+        if self.settings.theme != before.theme {
+            theme::set_mode(ui.ctx(), self.settings.theme);
+        }
         if self.settings != before && self.shots.is_none() {
             if self.settings.autostart != before.autostart
                 && let Err(e) = super::desktop::set_autostart(self.settings.autostart)
@@ -2011,6 +2021,32 @@ fn macro_key_name(k: u8) -> &'static str {
             .flatten()
             .unwrap_or("?")
     }
+}
+
+/// Settings row: label on the left, a drop-down with the current value on
+/// the right.
+fn choice_row<V: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut V,
+    options: &[(V, &str)],
+) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let current = options
+                .iter()
+                .find(|(v, _)| v == value)
+                .map_or("", |(_, name)| *name);
+            egui::ComboBox::from_id_salt(label)
+                .selected_text(current)
+                .show_ui(ui, |ui| {
+                    for (v, name) in options {
+                        ui.selectable_value(value, *v, *name);
+                    }
+                });
+        });
+    });
 }
 
 /// Proportional timeline of a macro: pressed steps in accent, pauses dim.

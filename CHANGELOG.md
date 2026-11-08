@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Settings → Theme: choose System, Light or Dark; the choice is saved and
+  applied immediately. `PADTUNE_THEME` still overrides it.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added
